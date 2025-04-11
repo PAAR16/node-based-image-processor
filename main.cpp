@@ -20,6 +20,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm> // Required for std::remove_if
+#include <memory> // Useful for smart pointers later, optional for now
 
 // === Project Headers ===
 #include "src/NodeGraph.h" // Includes Pin, Link, Node base struct
@@ -34,6 +35,17 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
+// Helper to find a node by ID
+Node* FindNodeById(int id) {
+    for (Node* node : g_Graph.nodes) {
+        if (node->id == id) {
+            return node;
+        }
+    }
+    return nullptr;
+}
+
+
 // === Main Application ===
 int main(int, char**)
 {
@@ -41,10 +53,7 @@ int main(int, char**)
 
     // --- 1. Setup GLFW window ---
     glfwSetErrorCallback(glfw_error_callback);
-    if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
-        return 1;
-    }
+    if (!glfwInit()) { /* ... error handling ... */ std::cerr << "GLFW Init Failed\n"; return 1; }
     printf("GLFW Initialized.\n");
 
     const char* glsl_version = "#version 130";
@@ -52,14 +61,10 @@ int main(int, char**)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
     GLFWwindow* window = glfwCreateWindow(1280, 720, "Node Image Processor (ImNodes)", NULL, NULL);
-    if (window == NULL) {
-        std::cerr << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return 1;
-    }
+    if (window == NULL) { /* ... error handling ... */ std::cerr << "GLFW Window Creation Failed\n"; glfwTerminate(); return 1; }
     printf("GLFW Window Created.\n");
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1); // Enable vsync
+    glfwSwapInterval(1);
 
     // --- 2. Initialize ImGui & ImNodes ---
     IMGUI_CHECKVERSION();
@@ -69,33 +74,23 @@ int main(int, char**)
     printf("ImNodes Context Created.\n");
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    // Docking/Viewports are disabled
 
     ImGui::StyleColorsDark();
     ImNodes::StyleColorsDark();
     printf("ImGui/ImNodes Style Set.\n");
 
-    if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
-         std::cerr << "Failed to initialize ImGui GLFW backend" << std::endl;
-         ImNodes::DestroyContext(); ImGui::DestroyContext(); glfwDestroyWindow(window); glfwTerminate(); return 1;
-    }
+    if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) { /* ... error handling ... */ std::cerr << "ImGui GLFW Backend Failed\n"; ImNodes::DestroyContext(); ImGui::DestroyContext(); glfwDestroyWindow(window); glfwTerminate(); return 1; }
     printf("ImGui GLFW Backend Initialized.\n");
-    if (!ImGui_ImplOpenGL3_Init(glsl_version)) {
-         std::cerr << "Failed to initialize ImGui OpenGL3 backend" << std::endl;
-         ImGui_ImplGlfw_Shutdown(); ImNodes::DestroyContext(); ImGui::DestroyContext(); glfwDestroyWindow(window); glfwTerminate(); return 1;
-    }
+    if (!ImGui_ImplOpenGL3_Init(glsl_version)) { /* ... error handling ... */ std::cerr << "ImGui OpenGL3 Backend Failed\n"; ImGui_ImplGlfw_Shutdown(); ImNodes::DestroyContext(); ImGui::DestroyContext(); glfwDestroyWindow(window); glfwTerminate(); return 1; }
     printf("ImGui OpenGL3 Backend Initialized.\n");
 
-    // --- Create Initial Nodes (COMMENTED OUT - Now using context menu) ---
-    /* (Initial node creation code removed for clarity - see previous versions if needed) */
 
-    ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.00f); // Dark background
+    ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.00f);
 
     printf("Entering main loop...\n");
     // --- 3. Main Render Loop ---
     while (!glfwWindowShouldClose(window))
     {
-        // Variables to track node addition this frame
         int node_id_to_set_position = -1;
         ImVec2 new_node_screen_pos;
 
@@ -109,9 +104,14 @@ int main(int, char**)
         ImGui::SetNextWindowSize(ImVec2(900, 700), ImGuiCond_FirstUseEver);
         ImGui::Begin("Node Editor");
 
+        // Split the window into two sections: node canvas and properties
+        ImGui::Columns(2, "NodeEditorColumns", true);
+        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 300); // Main canvas gets all space except 300px
+
+        // Draw the node canvas in the left column
         ImNodes::BeginNodeEditor();
 
-        // Draw Existing Nodes (Loop 1)
+        // Draw Existing Nodes
         for (Node* node : g_Graph.nodes) {
             ImNodes::BeginNode(node->id);
 
@@ -119,14 +119,14 @@ int main(int, char**)
             ImGui::TextUnformatted(node->name.c_str());
             ImNodes::EndNodeTitleBar();
 
-            // Draw Input Pins (Simplified)
+            // Draw Input Pins
             for (Pin& pin : node->inputPins) {
                 ImNodes::BeginInputAttribute(pin.id);
                 ImGui::TextUnformatted(pin.name.c_str());
                 ImNodes::EndInputAttribute();
             }
 
-            // Draw Output Pins (Simplified)
+            // Draw Output Pins
             for (Pin& pin : node->outputPins) {
                 ImNodes::BeginOutputAttribute(pin.id);
                 ImGui::TextUnformatted(pin.name.c_str());
@@ -141,21 +141,20 @@ int main(int, char**)
             }
         }
 
-        // Draw Links (Loop 2)
+        // Draw Links
         for (const Link& link : g_Graph.links) {
             ImNodes::Link(link.id, link.startPinId, link.endPinId);
         }
 
-        // --- Handle Adding New Nodes via Context Menu ---
+        // Handle Adding New Nodes via Context Menu
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.f, 8.f));
         if (ImGui::BeginPopupContextWindow("NodeContextMenu")) {
             ImVec2 click_screen_pos = ImGui::GetMousePosOnOpeningCurrentPopup();
 
-            // Helper lambda function to queue node creation
             auto QueueAddNode = [&](Node* newNode) {
-                g_Graph.nodes.push_back(newNode);         // Add C++ object to graph
-                node_id_to_set_position = newNode->id;    // Mark this ID for position setting
-                new_node_screen_pos = click_screen_pos; // Store desired screen position
+                g_Graph.nodes.push_back(newNode);
+                node_id_to_set_position = newNode->id;
+                new_node_screen_pos = click_screen_pos;
                 printf("Queued add %s (ID: %d)\n", newNode->name.c_str(), newNode->id);
             };
 
@@ -177,21 +176,85 @@ int main(int, char**)
         }
         ImGui::PopStyleVar();
 
-
         ImNodes::EndNodeEditor(); // End the node editor canvas
 
+        // Switch to the right column for properties
+        ImGui::NextColumn();
 
-        // --- Set position for newly added node (AFTER EndNodeEditor) ---
-        if (node_id_to_set_position != -1) {
-            // Find the node pointer again
-            Node* new_node_ptr = nullptr;
-            for(Node* n : g_Graph.nodes) {
-                if (n->id == node_id_to_set_position) {
-                    new_node_ptr = n;
-                    break;
+        // Properties Panel (now integrated into the canvas)
+        ImGui::BeginChild("Properties", ImVec2(0, 0), true);
+        ImGui::Text("Properties");
+        ImGui::Separator();
+
+        int first_selected_node_id = -1;
+        int selected_count = 0;
+
+        // Get selected nodes
+        for (Node* node : g_Graph.nodes) {
+            if (ImNodes::IsNodeSelected(node->id)) {
+                selected_count++;
+                if (first_selected_node_id == -1) {
+                    first_selected_node_id = node->id;
                 }
             }
+        }
 
+        if (selected_count == 0) {
+            ImGui::Text("No node selected.");
+        } else if (selected_count == 1) {
+            Node* selected_node = FindNodeById(first_selected_node_id);
+            
+            if (selected_node) {
+                // Node header
+                ImGui::Text("Selected Node:");
+                ImGui::Separator();
+                ImGui::Text("ID: %d", selected_node->id);
+                ImGui::Text("Name: %s", selected_node->name.c_str());
+                ImGui::Separator();
+
+                // Node-specific properties
+                if (BrightnessContrastNode* bcNode = dynamic_cast<BrightnessContrastNode*>(selected_node)) {
+                    ImGui::Text("Brightness/Contrast Properties");
+                    bool changed = false;
+                    changed |= ImGui::SliderFloat("Brightness", &bcNode->brightness, -1.0f, 1.0f, "%.2f");
+                    changed |= ImGui::SliderFloat("Contrast", &bcNode->contrast, 0.0f, 2.0f, "%.2f");
+                    
+                    if (changed) {
+                        printf("Node %d properties updated\n", bcNode->id);
+                    }
+                }
+                else if (ImageInputNode* inputNode = dynamic_cast<ImageInputNode*>(selected_node)) {
+                    ImGui::Text("Image Input Properties");
+                    char pathBuffer[256];
+                    strncpy(pathBuffer, inputNode->filePath.c_str(), sizeof(pathBuffer) - 1);
+                    if (ImGui::InputText("File Path", pathBuffer, sizeof(pathBuffer))) {
+                        inputNode->filePath = pathBuffer;
+                        printf("File path updated: %s\n", pathBuffer);
+                    }
+                    
+                    if (ImGui::Button("Browse...")) {
+                        // TODO: Add file browser functionality
+                        printf("Browse button clicked\n");
+                    }
+                }
+                else if (OutputNode* outputNode = dynamic_cast<OutputNode*>(selected_node)) {
+                    ImGui::Text("Output Properties");
+                    // Add output node specific properties here
+                }
+            }
+        } else {
+            ImGui::Text("%d nodes selected", selected_count);
+            ImGui::Text("Multi-selection editing not supported yet");
+        }
+
+        ImGui::EndChild(); // End Properties
+        ImGui::Columns(1); // Reset columns
+
+        ImGui::End(); // End Node Editor window
+
+        // Set position for newly added node (AFTER EndNodeEditor)
+        if (node_id_to_set_position != -1) {
+            Node* new_node_ptr = FindNodeById(node_id_to_set_position); // Use helper
             if (new_node_ptr) {
                 printf("Attempting to set position for Node ID %d\n", node_id_to_set_position);
                 ImNodes::SetNodeScreenSpacePos(node_id_to_set_position, new_node_screen_pos);
@@ -199,8 +262,7 @@ int main(int, char**)
                 new_node_ptr->graphPosition = ImNodes::GetNodeGridSpacePos(node_id_to_set_position);
                 printf("  Stored grid position: (%.1f, %.1f)\n", new_node_ptr->graphPosition.x, new_node_ptr->graphPosition.y);
             }
-             // Reset for next frame (important!)
-             node_id_to_set_position = -1;
+             node_id_to_set_position = -1; // Reset
         }
 
 
@@ -210,6 +272,7 @@ int main(int, char**)
              printf("Link created: %d -> %d\n", start_attr, end_attr);
              int linkId = g_Graph.nextLinkId++;
              g_Graph.links.push_back(Link(linkId, start_attr, end_attr));
+             // TODO: Add link validation here
         }
 
         int link_id_to_destroy;
@@ -221,9 +284,6 @@ int main(int, char**)
                  g_Graph.links.erase(iter, g_Graph.links.end());
              }
         }
-
-
-        ImGui::End(); // End the host ImGui window
 
 
         // --- Rendering ---
@@ -242,14 +302,12 @@ int main(int, char**)
     // --- 4. Cleanup ---
     printf("Starting cleanup...\n");
     ImNodes::DestroyContext();
-    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplOpenGL3_Shutdown(); // Correct function name
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
     glfwDestroyWindow(window);
     glfwTerminate();
     printf("Cleanup finished. Exiting.\n");
-
-    // Graph destructor handles node deletion
 
     return 0;
 }
