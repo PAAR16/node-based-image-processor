@@ -86,30 +86,8 @@ int main(int, char**)
     }
     printf("ImGui OpenGL3 Backend Initialized.\n");
 
-    // --- Create Initial Nodes ---
-    printf("Creating initial nodes...\n");
-    {
-        int inputNodeId = g_Graph.nextNodeId++;
-        int inputPinId = g_Graph.nextPinId++;
-        ImageInputNode* inputNode = new ImageInputNode(inputNodeId, inputPinId);
-        inputNode->graphPosition = ImVec2(100, 100);
-        g_Graph.nodes.push_back(inputNode);
-
-        int outputNodeId = g_Graph.nextNodeId++;
-        int outputPinId = g_Graph.nextPinId++;
-        OutputNode* outputNode = new OutputNode(outputNodeId, outputPinId);
-        outputNode->graphPosition = ImVec2(500, 100); // Increased spacing
-        g_Graph.nodes.push_back(outputNode);
-
-        int bcNodeId = g_Graph.nextNodeId++;
-        int bcInputPinId = g_Graph.nextPinId++;
-        int bcOutputPinId = g_Graph.nextPinId++;
-        BrightnessContrastNode* bcNode = new BrightnessContrastNode(bcNodeId, bcInputPinId, bcOutputPinId);
-        bcNode->graphPosition = ImVec2(300, 250); // Position below
-        g_Graph.nodes.push_back(bcNode);
-    }
-    printf("Initial nodes created.\n");
-
+    // --- Create Initial Nodes (COMMENTED OUT - Now using context menu) ---
+    /* (Initial node creation code removed for clarity - see previous versions if needed) */
 
     ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.00f); // Dark background
 
@@ -117,6 +95,10 @@ int main(int, char**)
     // --- 3. Main Render Loop ---
     while (!glfwWindowShouldClose(window))
     {
+        // Variables to track node addition this frame
+        int node_id_to_set_position = -1;
+        ImVec2 new_node_screen_pos;
+
         glfwPollEvents();
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -129,17 +111,9 @@ int main(int, char**)
 
         ImNodes::BeginNodeEditor();
 
-        // Draw Nodes
+        // Draw Existing Nodes (Loop 1)
         for (Node* node : g_Graph.nodes) {
             ImNodes::BeginNode(node->id);
-
-            // Set initial node position only once
-            // (Might need a better way to handle loading positions later)
-            // bool initial_render = ImGui::IsWindowAppearing(); // This applies to the outer ImGui window, maybe not ideal
-            // if (initial_render) { // Crude check
-            //     ImNodes::SetNodeGridSpacePos(node->id, node->graphPosition);
-            // }
-            // Let's skip SetNodeGridSpacePos for now to see if it helps layout
 
             ImNodes::BeginNodeTitleBar();
             ImGui::TextUnformatted(node->name.c_str());
@@ -148,29 +122,86 @@ int main(int, char**)
             // Draw Input Pins (Simplified)
             for (Pin& pin : node->inputPins) {
                 ImNodes::BeginInputAttribute(pin.id);
-                ImGui::TextUnformatted(pin.name.c_str()); // Just the text
+                ImGui::TextUnformatted(pin.name.c_str());
                 ImNodes::EndInputAttribute();
             }
 
             // Draw Output Pins (Simplified)
             for (Pin& pin : node->outputPins) {
                 ImNodes::BeginOutputAttribute(pin.id);
-                ImGui::TextUnformatted(pin.name.c_str()); // Just the text
+                ImGui::TextUnformatted(pin.name.c_str());
                 ImNodes::EndOutputAttribute();
             }
 
             ImNodes::EndNode();
 
-            // Update stored position (Commented out for testing layout)
-            // node->graphPosition = ImNodes::GetNodeGridSpacePos(node->id);
+            // Update stored position if node is dragged
+            if (ImNodes::IsNodeSelected(node->id) && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                node->graphPosition = ImNodes::GetNodeGridSpacePos(node->id);
+            }
         }
 
-        // Draw Links
+        // Draw Links (Loop 2)
         for (const Link& link : g_Graph.links) {
             ImNodes::Link(link.id, link.startPinId, link.endPinId);
         }
 
+        // --- Handle Adding New Nodes via Context Menu ---
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.f, 8.f));
+        if (ImGui::BeginPopupContextWindow("NodeContextMenu")) {
+            ImVec2 click_screen_pos = ImGui::GetMousePosOnOpeningCurrentPopup();
+
+            // Helper lambda function to queue node creation
+            auto QueueAddNode = [&](Node* newNode) {
+                g_Graph.nodes.push_back(newNode);         // Add C++ object to graph
+                node_id_to_set_position = newNode->id;    // Mark this ID for position setting
+                new_node_screen_pos = click_screen_pos; // Store desired screen position
+                printf("Queued add %s (ID: %d)\n", newNode->name.c_str(), newNode->id);
+            };
+
+            if (ImGui::MenuItem("Image Input Node")) {
+                int node_id = g_Graph.nextNodeId++; int pin_id = g_Graph.nextPinId++;
+                QueueAddNode(new ImageInputNode(node_id, pin_id));
+            }
+            if (ImGui::MenuItem("Output Node")) {
+                int node_id = g_Graph.nextNodeId++; int pin_id = g_Graph.nextPinId++;
+                QueueAddNode(new OutputNode(node_id, pin_id));
+            }
+            if (ImGui::MenuItem("Brightness/Contrast")) {
+                int node_id = g_Graph.nextNodeId++; int pin_in = g_Graph.nextPinId++; int pin_out = g_Graph.nextPinId++;
+                QueueAddNode(new BrightnessContrastNode(node_id, pin_in, pin_out));
+            }
+            // Add more MenuItems for other node types later
+
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleVar();
+
+
         ImNodes::EndNodeEditor(); // End the node editor canvas
+
+
+        // --- Set position for newly added node (AFTER EndNodeEditor) ---
+        if (node_id_to_set_position != -1) {
+            // Find the node pointer again
+            Node* new_node_ptr = nullptr;
+            for(Node* n : g_Graph.nodes) {
+                if (n->id == node_id_to_set_position) {
+                    new_node_ptr = n;
+                    break;
+                }
+            }
+
+            if (new_node_ptr) {
+                printf("Attempting to set position for Node ID %d\n", node_id_to_set_position);
+                ImNodes::SetNodeScreenSpacePos(node_id_to_set_position, new_node_screen_pos);
+                // Immediately get the grid pos after setting screen pos
+                new_node_ptr->graphPosition = ImNodes::GetNodeGridSpacePos(node_id_to_set_position);
+                printf("  Stored grid position: (%.1f, %.1f)\n", new_node_ptr->graphPosition.x, new_node_ptr->graphPosition.y);
+            }
+             // Reset for next frame (important!)
+             node_id_to_set_position = -1;
+        }
 
 
         // Handle Link Creation / Deletion
@@ -181,7 +212,7 @@ int main(int, char**)
              g_Graph.links.push_back(Link(linkId, start_attr, end_attr));
         }
 
-        int link_id_to_destroy; // Renamed variable to avoid shadowing
+        int link_id_to_destroy;
         if (ImNodes::IsLinkDestroyed(&link_id_to_destroy)) {
              printf("Link destroyed: %d\n", link_id_to_destroy);
              auto iter = std::remove_if(g_Graph.links.begin(), g_Graph.links.end(),
