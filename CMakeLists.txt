@@ -66,10 +66,11 @@ add_executable(NodeImageProcessor main.cpp
 # --- Include Directories ---
 # Tell the target where to find header files (.h files)
 target_include_directories(NodeImageProcessor PUBLIC
-    ${OpenCV_INCLUDE_DIRS}    # OpenCV headers
-    ${IMGUI_DIR}              # ImGui core headers
-    ${IMGUI_DIR}/backends     # ImGui backend headers
-    ${IMNODES_DIR}            # <-- Use ImNodes include directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/src # <-- Add src directory for project headers
+    ${OpenCV_INCLUDE_DIRS}
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+    ${IMNODES_DIR}
 )
 
 # --- Link Libraries ---
