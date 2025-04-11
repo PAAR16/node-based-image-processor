@@ -1,132 +1,101 @@
 #include <stdio.h> // For printf
 
-// Include OpenGL loader/headers AFTER GLFW
-// Use ImGui's bundled OpenGL loader (we disabled GLAD in CMakeLists.txt)
-// Change these lines:
-// #include <libs/imgui/imgui.h>
-// #include <libs/imgui/backends/imgui_impl_glfw.h>
-// #include <libs/imgui/backends/imgui_impl_opengl3.h>
+// === Dear ImGui & Node Editor Includes ===
+#include "libs/imgui/imgui.h" // Using ImGui v1.88
+#include "libs/imnodes/imnodes.h" // Using ImNodes
+#include "libs/imgui/backends/imgui_impl_glfw.h"
+#include "libs/imgui/backends/imgui_impl_opengl3.h"
 
-// TO use double quotes instead:
-#include "libs/imgui/imgui.h"                     // Use quotes
-#include "libs/imgui/backends/imgui_impl_glfw.h"  // Use quotes
-#include "libs/imgui/backends/imgui_impl_opengl3.h" // Use quotes
-// Important: Include glad/gl.h after imgui_impl_opengl3.h if using glad,
-// otherwise include your OpenGL header (like GL/gl.h or glew.h) here if needed.
-// Since we use imgui's loader, this might not be strictly necessary, but doesn't hurt.
+// === Graphics & System Includes ===
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
 #elif defined(__APPLE__)
-#include <OpenGL/gl3.h> // Apple's OpenGL headers
+#include <OpenGL/gl3.h>
 #else
-#include <GL/gl.h> // Standard OpenGL header (might be needed on MinGW)
-                   // Or alternatively use GLEW or GLAD if preferred
+#include <GL/gl.h>
 #endif
+#include <GLFW/glfw3.h>
 
-// Include GLFW header AFTER OpenGL headers
-#include <GLFW/glfw3.h> // Will drag system OpenGL headers
+// === Standard Library Includes ===
+#include <iostream>
 
-#include <iostream> // For std::cerr, std::cout
-#include <opencv2/opencv.hpp> // Include OpenCV header
-
-
-// GLFW error callback function
+// === Helper Functions ===
 static void glfw_error_callback(int error, const char* description)
 {
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
+// === Main Application ===
 int main(int, char**)
 {
+    printf("Starting application...\n");
+
     // --- 1. Setup GLFW window ---
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return 1;
     }
+    printf("GLFW Initialized.\n");
 
-    // Decide GL+GLSL versions
-    #if defined(IMGUI_IMPL_OPENGL_ES2)
-        // GL ES 2.0 + GLSL 100
-        const char* glsl_version = "#version 100";
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-    #elif defined(__APPLE__)
-        // GL 3.2 + GLSL 150
-        const char* glsl_version = "#version 150";
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
-    #else
-        // GL 3.0 + GLSL 130
-        const char* glsl_version = "#version 130";
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-        //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // Optional on Windows/Linux
-        //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // Optional
-    #endif
+    // GL hints (using GL 3.0 as before)
+    const char* glsl_version = "#version 130";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
-    // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Node Image Processor", NULL, NULL);
+    // Create window
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Node Image Processor (ImNodes)", NULL, NULL);
     if (window == NULL) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         return 1;
     }
+    printf("GLFW Window Created.\n");
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
 
-    // --- 2. Initialize ImGui ---
+    // --- 2. Initialize ImGui & ImNodes ---
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    printf("ImGui Context Created.\n");
+    ImNodes::CreateContext(); // Initialize ImNodes
+    printf("ImNodes Context Created.\n");
+
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking (important for node editors)
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport / Platform Windows
+    // NOTE: Docking/Viewports are NOT enabled when using standard ImGui v1.88
 
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark(); // Or ImGui::StyleColorsLight(); ImGui::StyleColorsClassic();
-
-    // When viewports are enabled, tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-    ImGuiStyle& style = ImGui::GetStyle();
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-    {
-        style.WindowRounding = 0.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
+    ImGui::StyleColorsDark(); // Set ImGui style
+    ImNodes::StyleColorsDark(); // Set ImNodes style to match
+    printf("ImGui/ImNodes Style Set.\n");
 
     // Setup Platform/Renderer backends
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
          std::cerr << "Failed to initialize ImGui GLFW backend" << std::endl;
+         ImNodes::DestroyContext();
          ImGui::DestroyContext();
          glfwDestroyWindow(window);
          glfwTerminate();
          return 1;
     }
+    printf("ImGui GLFW Backend Initialized.\n");
     if (!ImGui_ImplOpenGL3_Init(glsl_version)) {
          std::cerr << "Failed to initialize ImGui OpenGL3 backend" << std::endl;
          ImGui_ImplGlfw_Shutdown();
+         ImNodes::DestroyContext();
          ImGui::DestroyContext();
          glfwDestroyWindow(window);
          glfwTerminate();
          return 1;
     }
+    printf("ImGui OpenGL3 Backend Initialized.\n");
 
-    // Load Fonts (Optional)
-    // io.Fonts->AddFontDefault();
-    // io.Fonts->AddFontFromFileTTF("path/to/font.ttf", 16.0f);
+    // Background color
+    ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.00f); // Dark background
 
-    // Our state for the application (e.g., clear color)
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    bool show_demo_window = true; // Show the ImGui demo window
-
+    printf("Entering main loop...\n");
     // --- 3. Main Render Loop ---
     while (!glfwWindowShouldClose(window))
     {
-        // Poll and handle events (inputs, window resize, etc.)
         glfwPollEvents();
 
         // Start the Dear ImGui frame
@@ -134,58 +103,46 @@ int main(int, char**)
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // --- ImGui Content Goes Here ---
+        // --- Draw the Node Editor ---
+        ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_FirstUseEver); // Set default size
+        ImGui::Begin("Node Editor"); // Start ImGui window to host the editor
 
-        // Show the ImGui Demo Window (useful for testing)
-        if (show_demo_window) {
-            ImGui::ShowDemoWindow(&show_demo_window);
-        }
+        ImNodes::BeginNodeEditor(); // Start the actual node editor canvas
 
-        // Example: Create a simple window
-        ImGui::Begin("Hello, world!");
-        ImGui::Text("This is your Node Image Processor.");
-        ImGui::Checkbox("Show Demo Window", &show_demo_window);
-        ImGui::ColorEdit3("Clear color", (float*)&clear_color);
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        ImGui::End();
+        // --- Nodes and Links will go here later ---
+        // Example: You could uncomment the ImNodes::BeginNode example from the previous step
+        //          to see a dummy node appear on the canvas.
+
+        ImNodes::EndNodeEditor(); // End the node editor canvas
+
+        ImGui::End(); // End the host ImGui window
+
 
         // --- Rendering ---
-
-        // Rendering ImGui
         ImGui::Render();
-
-        // Get display size and set viewport
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
-
-        // Clear the screen
         glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT);
-
-        // Render ImGui draw data
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        // Update and Render additional Platform Windows (for docking/viewports)
-        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-        {
-            GLFWwindow* backup_current_context = glfwGetCurrentContext();
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-            glfwMakeContextCurrent(backup_current_context);
-        }
+        // No platform window rendering needed
 
-        // Swap the front and back buffers
         glfwSwapBuffers(window);
     }
+    printf("Exited main loop.\n");
 
     // --- 4. Cleanup ---
+    printf("Starting cleanup...\n");
+    ImNodes::DestroyContext();      // Destroy ImNodes context
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    ImGui::DestroyContext();        // Destroy ImGui context
 
     glfwDestroyWindow(window);
     glfwTerminate();
+    printf("Cleanup finished. Exiting.\n");
 
     return 0;
 }

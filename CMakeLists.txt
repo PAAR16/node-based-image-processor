@@ -12,8 +12,6 @@ set(CMAKE_CXX_EXTENSIONS OFF) # Optional: Enforce standard C++
 # --- Find Required Libraries ---
 
 # Find OpenCV (installed via pacman)
-# Setting hints for MinGW/MSYS2 environments can sometimes help, but usually not needed if PATH is correct.
-# set(CMAKE_PREFIX_PATH "C:/msys64/mingw64") # Uncomment ONLY if find_package fails otherwise
 find_package(OpenCV REQUIRED)
 if(NOT OpenCV_FOUND)
     message(FATAL_ERROR "OpenCV not found. Make sure it's installed via pacman (mingw-w64-x86_64-opencv). Check CMake output for details.")
@@ -33,7 +31,7 @@ endif()
 
 # --- Add Dear ImGui Source Files ---
 # Define the path to the ImGui library source code within your project
-set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libs/imgui) # Assumes imgui source is in project_root/libs/imgui
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libs/imgui) # Assumes imgui source is in project_root/libs/imgui (Use v1.88 for this setup)
 
 # List the ImGui source files we need to compile
 # Core ImGui files
@@ -42,8 +40,7 @@ set(IMGUI_SOURCES
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
-    #Add imgui_demo.cpp if you want to include the demo window initially
-    ${IMGUI_DIR}/imgui_demo.cpp  # <-- UNCOMMENT THIS LINE
+    ${IMGUI_DIR}/imgui_demo.cpp  # Include demo for debugging ImGui itself if needed
 )
 
 # ImGui Backend files (GLFW + OpenGL3)
@@ -52,17 +49,27 @@ set(IMGUI_BACKEND_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
 )
 
+# --- Add ImNodes Source Files --- [Using ImNodes]
+set(IMNODES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libs/imnodes)
+set(IMNODES_SOURCES
+    ${IMNODES_DIR}/imnodes.cpp
+)
+
 # --- Define Executable Target ---
-# Add your main application source file(s) and the ImGui sources
-add_executable(NodeImageProcessor main.cpp ${IMGUI_SOURCES} ${IMGUI_BACKEND_SOURCES})
+# Add your main application source file(s) and sources from libraries
+add_executable(NodeImageProcessor main.cpp
+    ${IMGUI_SOURCES}
+    ${IMGUI_BACKEND_SOURCES}
+    ${IMNODES_SOURCES}       # <-- Use ImNodes sources
+)
 
 # --- Include Directories ---
 # Tell the target where to find header files (.h files)
 target_include_directories(NodeImageProcessor PUBLIC
-    ${OpenCV_INCLUDE_DIRS}  # OpenCV headers
-    ${IMGUI_DIR}            # ImGui core headers (where imgui.h is)
-    ${IMGUI_DIR}/backends   # ImGui backend headers (where imgui_impl_glfw.h etc. are)
-    # GLFW and OpenGL headers are usually handled correctly by linking the imported targets below
+    ${OpenCV_INCLUDE_DIRS}    # OpenCV headers
+    ${IMGUI_DIR}              # ImGui core headers
+    ${IMGUI_DIR}/backends     # ImGui backend headers
+    ${IMNODES_DIR}            # <-- Use ImNodes include directory
 )
 
 # --- Link Libraries ---
@@ -87,6 +94,7 @@ target_compile_definitions(NodeImageProcessor PRIVATE IMGUI_IMPL_OPENGL_LOADER_G
 message(STATUS "CMake configured for NodeImageProcessor")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  Using OpenCV: ${OpenCV_VERSION} (Include: ${OpenCV_INCLUDE_DIRS})")
-message(STATUS "  Using GLFW3: ${glfw3_VERSION_STRING} (Found: ${glfw3_FOUND})") # glfw3_VERSION_STRING is more likely set
+message(STATUS "  Using GLFW3: ${glfw3_VERSION_STRING} (Found: ${glfw3_FOUND})")
 message(STATUS "  Using OpenGL: ${OPENGL_FOUND} (Version: ${OPENGL_GL_VERSION_STRING})")
 message(STATUS "  Using ImGui from: ${IMGUI_DIR}")
+message(STATUS "  Using ImNodes from: ${IMNODES_DIR}") # Updated message

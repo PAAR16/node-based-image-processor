@@ -3,25 +3,15 @@
 
 // Implemented features:
 //  [X] Renderer: User texture binding. Use 'MTLTexture' as ImTextureID. Read the FAQ about ImTextureID!
-//  [X] Renderer: Large meshes support (64k+ vertices) even with 16-bit indices (ImGuiBackendFlags_RendererHasVtxOffset).
-//  [X] Renderer: Multi-viewport support (multiple windows). Enable with 'io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable'.
+//  [X] Renderer: Support for large meshes (64k+ vertices) with 16-bit indices.
 
 // You can use unmodified imgui_impl_* files in your project. See examples/ folder for examples of using this.
 // Prefer including the entire imgui/ repository into your project (either as a copy or as a submodule), and only build the backends you need.
-// Learn about Dear ImGui:
-// - FAQ                  https://dearimgui.com/faq
-// - Getting Started      https://dearimgui.com/getting-started
-// - Documentation        https://dearimgui.com/docs (same as your local docs/ folder).
-// - Introduction, links and more at the top of imgui.cpp
+// If you are new to Dear ImGui, read documentation from the docs/ folder + read the top of imgui.cpp.
+// Read online: https://github.com/ocornut/imgui/tree/master/docs
 
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
-//  2025-XX-XX: Metal: Added support for multiple windows via the ImGuiPlatformIO interface.
-//  2025-02-03: Metal: Crash fix. (#8367)
-//  2025-01-08: Metal: Fixed memory leaks when using metal-cpp (#8276, #8166) or when using multiple contexts (#7419).
-//  2022-08-23: Metal: Update deprecated property 'sampleCount'->'rasterSampleCount'.
-//  2022-07-05: Metal: Add dispatch synchronization.
-//  2022-06-30: Metal: Use __bridge for ARC based systems.
 //  2022-06-01: Metal: Fixed null dereference on exit inside command buffer completion handler.
 //  2022-04-27: Misc: Store backend data in a per-context struct, allowing to use this backend with multiple contexts.
 //  2022-01-03: Metal: Ignore ImDrawCmd where ElemCount == 0 (very rare but can technically be manufactured by user code).
@@ -37,16 +27,9 @@
 //  2018-07-05: Metal: Added new Metal backend implementation.
 
 #include "imgui.h"
-#ifndef IMGUI_DISABLE
 #include "imgui_impl_metal.h"
 #import <time.h>
 #import <Metal/Metal.h>
-
-// Forward Declarations
-static void ImGui_ImplMetal_InitMultiViewportSupport();
-static void ImGui_ImplMetal_ShutdownMultiViewportSupport();
-static void ImGui_ImplMetal_CreateDeviceObjectsForPlatformWindows();
-static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows();
 
 #pragma mark - Support classes
 
@@ -84,15 +67,16 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows();
 
 struct ImGui_ImplMetal_Data
 {
-    MetalContext*               SharedMetalContext;
+    MetalContext*            SharedMetalContext;
 
-    ImGui_ImplMetal_Data()      { memset((void*)this, 0, sizeof(*this)); }
+    ImGui_ImplMetal_Data()  { memset(this, 0, sizeof(*this)); }
 };
 
-static ImGui_ImplMetal_Data*    ImGui_ImplMetal_GetBackendData()    { return ImGui::GetCurrentContext() ? (ImGui_ImplMetal_Data*)ImGui::GetIO().BackendRendererUserData : nullptr; }
-static void                     ImGui_ImplMetal_DestroyBackendData(){ IM_DELETE(ImGui_ImplMetal_GetBackendData()); }
+static ImGui_ImplMetal_Data*     ImGui_ImplMetal_CreateBackendData()  { return IM_NEW(ImGui_ImplMetal_Data)(); }
+static ImGui_ImplMetal_Data*     ImGui_ImplMetal_GetBackendData()     { return ImGui::GetCurrentContext() ? (ImGui_ImplMetal_Data*)ImGui::GetIO().BackendRendererUserData : NULL; }
+static void                      ImGui_ImplMetal_DestroyBackendData() { IM_DELETE(ImGui_ImplMetal_GetBackendData()); }
 
-static inline CFTimeInterval    GetMachAbsoluteTimeInSeconds()      { return (CFTimeInterval)(double)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9); }
+static inline CFTimeInterval     GetMachAbsoluteTimeInSeconds()       { return static_cast<CFTimeInterval>(static_cast<double>(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e9); }
 
 #ifdef IMGUI_IMPL_METAL_CPP
 
@@ -100,12 +84,12 @@ static inline CFTimeInterval    GetMachAbsoluteTimeInSeconds()      { return (CF
 
 bool ImGui_ImplMetal_Init(MTL::Device* device)
 {
-    return ImGui_ImplMetal_Init((__bridge id<MTLDevice>)(device));
+    return ImGui_ImplMetal_Init((id<MTLDevice>)(device));
 }
 
 void ImGui_ImplMetal_NewFrame(MTL::RenderPassDescriptor* renderPassDescriptor)
 {
-    ImGui_ImplMetal_NewFrame((__bridge MTLRenderPassDescriptor*)(renderPassDescriptor));
+    ImGui_ImplMetal_NewFrame((MTLRenderPassDescriptor*)(renderPassDescriptor));
 }
 
 void ImGui_ImplMetal_RenderDrawData(ImDrawData* draw_data,
@@ -113,19 +97,19 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* draw_data,
                                     MTL::RenderCommandEncoder* commandEncoder)
 {
     ImGui_ImplMetal_RenderDrawData(draw_data,
-                                   (__bridge id<MTLCommandBuffer>)(commandBuffer),
-                                   (__bridge id<MTLRenderCommandEncoder>)(commandEncoder));
+                                   (id<MTLCommandBuffer>)(commandBuffer),
+                                   (id<MTLRenderCommandEncoder>)(commandEncoder));
 
 }
 
 bool ImGui_ImplMetal_CreateFontsTexture(MTL::Device* device)
 {
-    return ImGui_ImplMetal_CreateFontsTexture((__bridge id<MTLDevice>)(device));
+    return ImGui_ImplMetal_CreateFontsTexture((id<MTLDevice>)(device));
 }
 
 bool ImGui_ImplMetal_CreateDeviceObjects(MTL::Device* device)
 {
-    return ImGui_ImplMetal_CreateDeviceObjects((__bridge id<MTLDevice>)(device));
+    return ImGui_ImplMetal_CreateDeviceObjects((id<MTLDevice>)(device));
 }
 
 #endif // #ifdef IMGUI_IMPL_METAL_CPP
@@ -134,48 +118,30 @@ bool ImGui_ImplMetal_CreateDeviceObjects(MTL::Device* device)
 
 bool ImGui_ImplMetal_Init(id<MTLDevice> device)
 {
+    ImGui_ImplMetal_Data* bd = ImGui_ImplMetal_CreateBackendData();
     ImGuiIO& io = ImGui::GetIO();
-    IMGUI_CHECKVERSION();
-    IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
-
-    ImGui_ImplMetal_Data* bd = IM_NEW(ImGui_ImplMetal_Data)();
     io.BackendRendererUserData = (void*)bd;
     io.BackendRendererName = "imgui_impl_metal";
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;  // We can honor the ImDrawCmd::VtxOffset field, allowing for large meshes.
-    io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports;  // We can create multi-viewports on the Renderer side (optional)
 
     bd->SharedMetalContext = [[MetalContext alloc] init];
     bd->SharedMetalContext.device = device;
-
-    ImGui_ImplMetal_InitMultiViewportSupport();
 
     return true;
 }
 
 void ImGui_ImplMetal_Shutdown()
 {
-    ImGui_ImplMetal_Data* bd = ImGui_ImplMetal_GetBackendData();
-    IM_UNUSED(bd);
-    IM_ASSERT(bd != nullptr && "No renderer backend to shutdown, or already shutdown?");
-    ImGui_ImplMetal_ShutdownMultiViewportSupport();
     ImGui_ImplMetal_DestroyDeviceObjects();
     ImGui_ImplMetal_DestroyBackendData();
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.BackendRendererName = nullptr;
-    io.BackendRendererUserData = nullptr;
-    io.BackendFlags &= ~(ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasViewports);
 }
 
 void ImGui_ImplMetal_NewFrame(MTLRenderPassDescriptor* renderPassDescriptor)
 {
     ImGui_ImplMetal_Data* bd = ImGui_ImplMetal_GetBackendData();
-    IM_ASSERT(bd != nil && "Context or backend not initialized! Did you call ImGui_ImplMetal_Init()?");
-#ifdef IMGUI_IMPL_METAL_CPP
-    bd->SharedMetalContext.framebufferDescriptor = [[[FramebufferDescriptor alloc] initWithRenderPassDescriptor:renderPassDescriptor]autorelease];
-#else
+    IM_ASSERT(bd->SharedMetalContext != nil && "No Metal context. Did you call ImGui_ImplMetal_Init() ?");
     bd->SharedMetalContext.framebufferDescriptor = [[FramebufferDescriptor alloc] initWithRenderPassDescriptor:renderPassDescriptor];
-#endif
+
     if (bd->SharedMetalContext.depthStencilState == nil)
         ImGui_ImplMetal_CreateDeviceObjects(bd->SharedMetalContext.device);
 }
@@ -264,14 +230,14 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* drawData, id<MTLCommandBuffer> c
     size_t indexBufferOffset = 0;
     for (int n = 0; n < drawData->CmdListsCount; n++)
     {
-        const ImDrawList* draw_list = drawData->CmdLists[n];
+        const ImDrawList* cmd_list = drawData->CmdLists[n];
 
-        memcpy((char*)vertexBuffer.buffer.contents + vertexBufferOffset, draw_list->VtxBuffer.Data, (size_t)draw_list->VtxBuffer.Size * sizeof(ImDrawVert));
-        memcpy((char*)indexBuffer.buffer.contents + indexBufferOffset, draw_list->IdxBuffer.Data, (size_t)draw_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+        memcpy((char*)vertexBuffer.buffer.contents + vertexBufferOffset, cmd_list->VtxBuffer.Data, (size_t)cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
+        memcpy((char*)indexBuffer.buffer.contents + indexBufferOffset, cmd_list->IdxBuffer.Data, (size_t)cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
 
-        for (int cmd_i = 0; cmd_i < draw_list->CmdBuffer.Size; cmd_i++)
+        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
         {
-            const ImDrawCmd* pcmd = &draw_list->CmdBuffer[cmd_i];
+            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
             if (pcmd->UserCallback)
             {
                 // User callback, registered via ImDrawList::AddCallback()
@@ -279,7 +245,7 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* drawData, id<MTLCommandBuffer> c
                 if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
                     ImGui_ImplMetal_SetupRenderState(drawData, commandBuffer, commandEncoder, renderPipelineState, vertexBuffer, vertexBufferOffset);
                 else
-                    pcmd->UserCallback(draw_list, pcmd);
+                    pcmd->UserCallback(cmd_list, pcmd);
             }
             else
             {
@@ -309,7 +275,7 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* drawData, id<MTLCommandBuffer> c
 
                 // Bind texture, Draw
                 if (ImTextureID tex_id = pcmd->GetTexID())
-                    [commandEncoder setFragmentTexture:(__bridge id<MTLTexture>)(void*)(intptr_t)(tex_id) atIndex:0];
+                    [commandEncoder setFragmentTexture:(__bridge id<MTLTexture>)(tex_id) atIndex:0];
 
                 [commandEncoder setVertexBufferOffset:(vertexBufferOffset + pcmd->VtxOffset * sizeof(ImDrawVert)) atIndex:0];
                 [commandEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
@@ -320,18 +286,18 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* drawData, id<MTLCommandBuffer> c
             }
         }
 
-        vertexBufferOffset += (size_t)draw_list->VtxBuffer.Size * sizeof(ImDrawVert);
-        indexBufferOffset += (size_t)draw_list->IdxBuffer.Size * sizeof(ImDrawIdx);
+        vertexBufferOffset += (size_t)cmd_list->VtxBuffer.Size * sizeof(ImDrawVert);
+        indexBufferOffset += (size_t)cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx);
     }
 
-    MetalContext* sharedMetalContext = bd->SharedMetalContext;
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer>)
     {
         dispatch_async(dispatch_get_main_queue(), ^{
-            @synchronized(sharedMetalContext.bufferCache)
+            ImGui_ImplMetal_Data* bd = ImGui_ImplMetal_GetBackendData();
+            if (bd != NULL)
             {
-                [sharedMetalContext.bufferCache addObject:vertexBuffer];
-                [sharedMetalContext.bufferCache addObject:indexBuffer];
+                [bd->SharedMetalContext.bufferCache addObject:vertexBuffer];
+                [bd->SharedMetalContext.bufferCache addObject:indexBuffer];
             }
         });
     }];
@@ -362,7 +328,7 @@ bool ImGui_ImplMetal_CreateFontsTexture(id<MTLDevice> device)
     id <MTLTexture> texture = [device newTextureWithDescriptor:textureDescriptor];
     [texture replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)width, (NSUInteger)height) mipmapLevel:0 withBytes:pixels bytesPerRow:(NSUInteger)width * 4];
     bd->SharedMetalContext.fontTexture = texture;
-    io.Fonts->SetTexID((ImTextureID)(intptr_t)(__bridge void*)bd->SharedMetalContext.fontTexture); // ImTextureID == ImU64
+    io.Fonts->SetTexID((__bridge void*)bd->SharedMetalContext.fontTexture); // ImTextureID == void*
 
     return (bd->SharedMetalContext.fontTexture != nil);
 }
@@ -372,7 +338,7 @@ void ImGui_ImplMetal_DestroyFontsTexture()
     ImGui_ImplMetal_Data* bd = ImGui_ImplMetal_GetBackendData();
     ImGuiIO& io = ImGui::GetIO();
     bd->SharedMetalContext.fontTexture = nil;
-    io.Fonts->SetTexID(0);
+    io.Fonts->SetTexID(nullptr);
 }
 
 bool ImGui_ImplMetal_CreateDeviceObjects(id<MTLDevice> device)
@@ -382,11 +348,8 @@ bool ImGui_ImplMetal_CreateDeviceObjects(id<MTLDevice> device)
     depthStencilDescriptor.depthWriteEnabled = NO;
     depthStencilDescriptor.depthCompareFunction = MTLCompareFunctionAlways;
     bd->SharedMetalContext.depthStencilState = [device newDepthStencilStateWithDescriptor:depthStencilDescriptor];
-    ImGui_ImplMetal_CreateDeviceObjectsForPlatformWindows();
-#ifdef IMGUI_IMPL_METAL_CPP
-    [depthStencilDescriptor release];
-#endif
     ImGui_ImplMetal_CreateFontsTexture(device);
+
     return true;
 }
 
@@ -394,153 +357,7 @@ void ImGui_ImplMetal_DestroyDeviceObjects()
 {
     ImGui_ImplMetal_Data* bd = ImGui_ImplMetal_GetBackendData();
     ImGui_ImplMetal_DestroyFontsTexture();
-    ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows();
     [bd->SharedMetalContext.renderPipelineStateCache removeAllObjects];
-}
-
-#pragma mark - Multi-viewport support
-
-#import <QuartzCore/CAMetalLayer.h>
-
-#if TARGET_OS_OSX
-#import <Cocoa/Cocoa.h>
-#endif
-
-//--------------------------------------------------------------------------------------------------------
-// MULTI-VIEWPORT / PLATFORM INTERFACE SUPPORT
-// This is an _advanced_ and _optional_ feature, allowing the back-end to create and handle multiple viewports simultaneously.
-// If you are new to dear imgui or creating a new binding for dear imgui, it is recommended that you completely ignore this section first..
-//--------------------------------------------------------------------------------------------------------
-
-struct ImGuiViewportDataMetal
-{
-    CAMetalLayer*               MetalLayer;
-    id<MTLCommandQueue>         CommandQueue;
-    MTLRenderPassDescriptor*    RenderPassDescriptor;
-    void*                       Handle = nullptr;
-    bool                        FirstFrame = true;
-};
-
-static void ImGui_ImplMetal_CreateWindow(ImGuiViewport* viewport)
-{
-    ImGui_ImplMetal_Data* bd = ImGui_ImplMetal_GetBackendData();
-    ImGuiViewportDataMetal* data = IM_NEW(ImGuiViewportDataMetal)();
-    viewport->RendererUserData = data;
-
-    // PlatformHandleRaw should always be a NSWindow*, whereas PlatformHandle might be a higher-level handle (e.g. GLFWWindow*, SDL_Window*).
-    // Some back-ends will leave PlatformHandleRaw == 0, in which case we assume PlatformHandle will contain the NSWindow*.
-    void* handle = viewport->PlatformHandleRaw ? viewport->PlatformHandleRaw : viewport->PlatformHandle;
-    IM_ASSERT(handle != nullptr);
-
-    id<MTLDevice> device = bd->SharedMetalContext.device;
-    CAMetalLayer* layer = [CAMetalLayer layer];
-    layer.device = device;
-    layer.framebufferOnly = YES;
-    layer.pixelFormat = bd->SharedMetalContext.framebufferDescriptor.colorPixelFormat;
-#if TARGET_OS_OSX
-    NSWindow* window = (__bridge NSWindow*)handle;
-    NSView* view = window.contentView;
-    view.layer = layer;
-    view.wantsLayer = YES;
-#endif
-    data->MetalLayer = layer;
-    data->CommandQueue = [device newCommandQueue];
-    data->RenderPassDescriptor = [[MTLRenderPassDescriptor alloc] init];
-    data->Handle = handle;
-}
-
-static void ImGui_ImplMetal_DestroyWindow(ImGuiViewport* viewport)
-{
-    // The main viewport (owned by the application) will always have RendererUserData == 0 since we didn't create the data for it.
-    if (ImGuiViewportDataMetal* data = (ImGuiViewportDataMetal*)viewport->RendererUserData)
-        IM_DELETE(data);
-    viewport->RendererUserData = nullptr;
-}
-
-inline static CGSize MakeScaledSize(CGSize size, CGFloat scale)
-{
-    return CGSizeMake(size.width * scale, size.height * scale);
-}
-
-static void ImGui_ImplMetal_SetWindowSize(ImGuiViewport* viewport, ImVec2 size)
-{
-    ImGuiViewportDataMetal* data = (ImGuiViewportDataMetal*)viewport->RendererUserData;
-    data->MetalLayer.drawableSize = MakeScaledSize(CGSizeMake(size.x, size.y), viewport->DpiScale);
-}
-
-static void ImGui_ImplMetal_RenderWindow(ImGuiViewport* viewport, void*)
-{
-    ImGuiViewportDataMetal* data = (ImGuiViewportDataMetal*)viewport->RendererUserData;
-
-#if TARGET_OS_OSX
-    void* handle = viewport->PlatformHandleRaw ? viewport->PlatformHandleRaw : viewport->PlatformHandle;
-    NSWindow* window = (__bridge NSWindow*)handle;
-
-    // Always render the first frame, regardless of occlusionState, to avoid an initial flicker
-    if ((window.occlusionState & NSWindowOcclusionStateVisible) == 0 && !data->FirstFrame)
-    {
-        // Do not render windows which are completely occluded. Calling -[CAMetalLayer nextDrawable] will hang for
-        // approximately 1 second if the Metal layer is completely occluded.
-        return;
-    }
-    data->FirstFrame = false;
-
-    viewport->DpiScale = (float)window.backingScaleFactor;
-    if (data->MetalLayer.contentsScale != viewport->DpiScale)
-    {
-        data->MetalLayer.contentsScale = viewport->DpiScale;
-        data->MetalLayer.drawableSize = MakeScaledSize(window.frame.size, viewport->DpiScale);
-    }
-    viewport->DrawData->FramebufferScale = ImVec2(viewport->DpiScale, viewport->DpiScale);
-#endif
-
-    id <CAMetalDrawable> drawable = [data->MetalLayer nextDrawable];
-    if (drawable == nil)
-        return;
-
-    MTLRenderPassDescriptor* renderPassDescriptor = data->RenderPassDescriptor;
-    renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
-    renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
-    if ((viewport->Flags & ImGuiViewportFlags_NoRendererClear) == 0)
-        renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-
-    id <MTLCommandBuffer> commandBuffer = [data->CommandQueue commandBuffer];
-    id <MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
-    ImGui_ImplMetal_RenderDrawData(viewport->DrawData, commandBuffer, renderEncoder);
-    [renderEncoder endEncoding];
-
-    [commandBuffer presentDrawable:drawable];
-    [commandBuffer commit];
-}
-
-static void ImGui_ImplMetal_InitMultiViewportSupport()
-{
-    ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
-    platform_io.Renderer_CreateWindow = ImGui_ImplMetal_CreateWindow;
-    platform_io.Renderer_DestroyWindow = ImGui_ImplMetal_DestroyWindow;
-    platform_io.Renderer_SetWindowSize = ImGui_ImplMetal_SetWindowSize;
-    platform_io.Renderer_RenderWindow = ImGui_ImplMetal_RenderWindow;
-}
-
-static void ImGui_ImplMetal_ShutdownMultiViewportSupport()
-{
-    ImGui::DestroyPlatformWindows();
-}
-
-static void ImGui_ImplMetal_CreateDeviceObjectsForPlatformWindows()
-{
-    ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
-    for (int i = 1; i < platform_io.Viewports.Size; i++)
-        if (!platform_io.Viewports[i]->RendererUserData)
-            ImGui_ImplMetal_CreateWindow(platform_io.Viewports[i]);
-}
-
-static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
-{
-    ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
-    for (int i = 1; i < platform_io.Viewports.Size; i++)
-        if (platform_io.Viewports[i]->RendererUserData)
-            ImGui_ImplMetal_DestroyWindow(platform_io.Viewports[i]);
 }
 
 #pragma mark - MetalBuffer implementation
@@ -612,8 +429,8 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
 {
     if ((self = [super init]))
     {
-        self.renderPipelineStateCache = [NSMutableDictionary dictionary];
-        self.bufferCache = [NSMutableArray array];
+        _renderPipelineStateCache = [NSMutableDictionary dictionary];
+        _bufferCache = [NSMutableArray array];
         _lastBufferCachePurge = GetMachAbsoluteTimeInSeconds();
     }
     return self;
@@ -623,31 +440,28 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
 {
     uint64_t now = GetMachAbsoluteTimeInSeconds();
 
-    @synchronized(self.bufferCache)
+    // Purge old buffers that haven't been useful for a while
+    if (now - self.lastBufferCachePurge > 1.0)
     {
-        // Purge old buffers that haven't been useful for a while
-        if (now - self.lastBufferCachePurge > 1.0)
-        {
-            NSMutableArray* survivors = [NSMutableArray array];
-            for (MetalBuffer* candidate in self.bufferCache)
-                if (candidate.lastReuseTime > self.lastBufferCachePurge)
-                    [survivors addObject:candidate];
-            self.bufferCache = [survivors mutableCopy];
-            self.lastBufferCachePurge = now;
-        }
-
-        // See if we have a buffer we can reuse
-        MetalBuffer* bestCandidate = nil;
+        NSMutableArray* survivors = [NSMutableArray array];
         for (MetalBuffer* candidate in self.bufferCache)
-            if (candidate.buffer.length >= length && (bestCandidate == nil || bestCandidate.lastReuseTime > candidate.lastReuseTime))
-                bestCandidate = candidate;
+            if (candidate.lastReuseTime > self.lastBufferCachePurge)
+                [survivors addObject:candidate];
+        self.bufferCache = [survivors mutableCopy];
+        self.lastBufferCachePurge = now;
+    }
 
-        if (bestCandidate != nil)
-        {
-            [self.bufferCache removeObject:bestCandidate];
-            bestCandidate.lastReuseTime = now;
-            return bestCandidate;
-        }
+    // See if we have a buffer we can reuse
+    MetalBuffer* bestCandidate = nil;
+    for (MetalBuffer* candidate in self.bufferCache)
+        if (candidate.buffer.length >= length && (bestCandidate == nil || bestCandidate.lastReuseTime > candidate.lastReuseTime))
+            bestCandidate = candidate;
+
+    if (bestCandidate != nil)
+    {
+        [self.bufferCache removeObject:bestCandidate];
+        bestCandidate.lastReuseTime = now;
+        return bestCandidate;
     }
 
     // No luck; make a new buffer
@@ -713,13 +527,13 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
     }
 
     MTLVertexDescriptor* vertexDescriptor = [MTLVertexDescriptor vertexDescriptor];
-    vertexDescriptor.attributes[0].offset = offsetof(ImDrawVert, pos);
+    vertexDescriptor.attributes[0].offset = IM_OFFSETOF(ImDrawVert, pos);
     vertexDescriptor.attributes[0].format = MTLVertexFormatFloat2; // position
     vertexDescriptor.attributes[0].bufferIndex = 0;
-    vertexDescriptor.attributes[1].offset = offsetof(ImDrawVert, uv);
+    vertexDescriptor.attributes[1].offset = IM_OFFSETOF(ImDrawVert, uv);
     vertexDescriptor.attributes[1].format = MTLVertexFormatFloat2; // texCoords
     vertexDescriptor.attributes[1].bufferIndex = 0;
-    vertexDescriptor.attributes[2].offset = offsetof(ImDrawVert, col);
+    vertexDescriptor.attributes[2].offset = IM_OFFSETOF(ImDrawVert, col);
     vertexDescriptor.attributes[2].format = MTLVertexFormatUChar4; // color
     vertexDescriptor.attributes[2].bufferIndex = 0;
     vertexDescriptor.layouts[0].stepRate = 1;
@@ -730,7 +544,7 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
     pipelineDescriptor.vertexFunction = vertexFunction;
     pipelineDescriptor.fragmentFunction = fragmentFunction;
     pipelineDescriptor.vertexDescriptor = vertexDescriptor;
-    pipelineDescriptor.rasterSampleCount = self.framebufferDescriptor.sampleCount;
+    pipelineDescriptor.sampleCount = self.framebufferDescriptor.sampleCount;
     pipelineDescriptor.colorAttachments[0].pixelFormat = self.framebufferDescriptor.colorPixelFormat;
     pipelineDescriptor.colorAttachments[0].blendingEnabled = YES;
     pipelineDescriptor.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
@@ -750,7 +564,3 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
 }
 
 @end
-
-//-----------------------------------------------------------------------------
-
-#endif // #ifndef IMGUI_DISABLE
