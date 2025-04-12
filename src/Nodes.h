@@ -292,3 +292,82 @@ struct BrightnessContrastNode : public Node {
          }
     }
 };
+
+
+// --- Color Channel Splitter Node ---
+struct ColorChannelSplitterNode : public Node {
+    bool outputAsGrayscale = true;
+
+    ColorChannelSplitterNode(int id, int inputPinId, int redPinId, int greenPinId, int bluePinId) 
+        : Node(id, "Color Channel Splitter") {
+        // Input pin
+        Pin inPin(inputPinId, "Image", PinKind::Input);
+        inPin.node = this;
+        inputPins.push_back(inPin);
+
+        // Output pins for each channel
+        Pin redPin(redPinId, "Red", PinKind::Output);
+        redPin.node = this;
+        outputPins.push_back(redPin);
+
+        Pin greenPin(greenPinId, "Green", PinKind::Output);
+        greenPin.node = this;
+        outputPins.push_back(greenPin);
+
+        Pin bluePin(bluePinId, "Blue", PinKind::Output);
+        bluePin.node = this;
+        outputPins.push_back(bluePin);
+    }
+
+    void process() override {
+        printf("Processing ColorChannelSplitter node %d\n", id);
+        
+        // Clear output pins
+        for (auto& pin : outputPins) {
+            pin.imageData.release();
+        }
+
+        // Get input image
+        cv::Mat inputImage = GetInputImageData(inputPins[0]);
+        if (inputImage.empty()) {
+            printf("  No input image available.\n");
+            return;
+        }
+
+        // Convert to BGR if image is grayscale
+        cv::Mat workingImage;
+        if (inputImage.channels() == 1) {
+            cv::cvtColor(inputImage, workingImage, cv::COLOR_GRAY2BGR);
+        } else {
+            workingImage = inputImage.clone();
+        }
+        
+        // Split the channels
+        std::vector<cv::Mat> channels;
+        cv::split(workingImage, channels);  // channels[0] = Blue, [1] = Green, [2] = Red
+
+        if (channels.size() >= 3) {
+            for (int i = 0; i < 3; i++) {
+                if (!outputAsGrayscale) {
+                    // Create colored visualization
+                    cv::Mat colorViz = cv::Mat::zeros(channels[i].size(), CV_8UC3);
+                    int idx = 2 - i; // Reverse index for RGB order (0=R, 1=G, 2=B)
+                    // Set the specific color channel
+                    std::vector<cv::Mat> colorChannels(3);
+                    for (int j = 0; j < 3; j++) {
+                        colorChannels[j] = (j == idx) ? channels[idx] : cv::Mat::zeros(channels[idx].size(), CV_8UC1);
+                    }
+                    cv::merge(colorChannels, colorViz);
+                    outputPins[i].imageData = colorViz;
+                } else {
+                    // Output as grayscale (single channel converted to BGR)
+                    cv::Mat grayViz;
+                    cv::cvtColor(channels[2-i], grayViz, cv::COLOR_GRAY2BGR);
+                    outputPins[i].imageData = grayViz;
+                }
+            }
+        }
+
+        printf("  Channels split successfully.\n");
+    }
+};

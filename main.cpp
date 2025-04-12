@@ -31,7 +31,7 @@
 #include <portable-file-dialogs.h>
 
 // === Global Variables ===
-NodeGraph g_Graph; // Holds all nodes and links
+NodeGraph g_Graph;  // Global graph instance
 
 // === Helper Functions ===
 static void glfw_error_callback(int error, const char* description)
@@ -196,7 +196,14 @@ int main(int, char**)
                 int node_id = g_Graph.nextNodeId++; int pin_in = g_Graph.nextPinId++; int pin_out = g_Graph.nextPinId++;
                 QueueAddNode(new BrightnessContrastNode(node_id, pin_in, pin_out));
             }
-            // Add more MenuItems for other node types later
+            if (ImGui::MenuItem("Color Channel Splitter")) {
+                int node_id = g_Graph.nextNodeId++;
+                int pin_in = g_Graph.nextPinId++;
+                int pin_red = g_Graph.nextPinId++;
+                int pin_green = g_Graph.nextPinId++;
+                int pin_blue = g_Graph.nextPinId++;
+                QueueAddNode(new ColorChannelSplitterNode(node_id, pin_in, pin_red, pin_green, pin_blue));
+            }
 
             ImGui::EndPopup();
         }
@@ -376,6 +383,24 @@ int main(int, char**)
                         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No image data to save");
                     }
                     ImGui::Separator();
+                }
+                else if (ColorChannelSplitterNode* splitterNode = dynamic_cast<ColorChannelSplitterNode*>(selected_node)) {
+                    ImGui::Text("Channel Splitter Settings:");
+                    ImGui::Separator();
+
+                    bool changed = false;
+                    changed |= ImGui::Checkbox("Output as Grayscale", &splitterNode->outputAsGrayscale);
+                    
+                    if (changed) {
+                        printf("Color Channel Splitter node %d settings updated\n", splitterNode->id);
+                        splitterNode->process();
+                    }
+
+                    ImGui::Separator();
+                    ImGui::Text("Output Channels:");
+                    ImGui::BulletText("Red (Channel 0)");
+                    ImGui::BulletText("Green (Channel 1)");
+                    ImGui::BulletText("Blue (Channel 2)");
                 }
             }
         } else {

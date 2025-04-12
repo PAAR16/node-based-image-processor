@@ -138,3 +138,29 @@ std::optional<cv::Mat> GetInputImageData(const NodeGraph& graph, int inputPinId)
 
     return std::nullopt;
 }
+
+// --- NEW: Overload Function Definition ---
+cv::Mat GetInputImageData(const Pin& inputPin) {
+    if (inputPin.kind != PinKind::Input || !inputPin.node) {
+        return cv::Mat();
+    }
+
+    // Get access to the graph through the global variable
+    extern NodeGraph g_Graph;
+
+    // Find the connected output pin through links
+    for (const auto& link : g_Graph.links) {
+        if (link.endPinId == inputPin.id) {
+            // Find the source node and its output pin
+            for (const auto& node : g_Graph.nodes) {
+                for (const auto& outputPin : node->outputPins) {
+                    if (outputPin.id == link.startPinId) {
+                        return outputPin.imageData;
+                    }
+                }
+            }
+        }
+    }
+    
+    return cv::Mat();
+}
