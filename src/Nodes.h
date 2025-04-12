@@ -84,6 +84,12 @@ struct OutputNode : public Node {
     GLuint previewTextureId = 0;
     int textureWidth = 0;
     int textureHeight = 0;
+    
+    // Add new members for save settings
+    std::string saveFilePath;
+    int jpegQuality = 95;  // 0-100 for JPEG
+    int pngCompression = 6; // 0-9 for PNG
+    std::string selectedFormat = "PNG"; // Default format
 
     OutputNode(int id, int pinId) : Node(id, "Output") {
         Pin inPin(pinId, "Input", PinKind::Input);
@@ -159,6 +165,29 @@ struct OutputNode : public Node {
         glBindTexture(GL_TEXTURE_2D, 0); // Unbind
     }
 
+    // Add save functionality
+    bool SaveImageToDisk() {
+        if (resultImage.empty()) {
+            printf("Error: No image data to save\n");
+            return false;
+        }
+
+        std::vector<int> params;
+        if (selectedFormat == "JPEG" || selectedFormat == "JPG") {
+            params.push_back(cv::IMWRITE_JPEG_QUALITY);
+            params.push_back(jpegQuality);
+        } else if (selectedFormat == "PNG") {
+            params.push_back(cv::IMWRITE_PNG_COMPRESSION);
+            params.push_back(pngCompression);
+        }
+
+        try {
+            return cv::imwrite(saveFilePath, resultImage, params);
+        } catch (const cv::Exception& ex) {
+            printf("Error saving image: %s\n", ex.what());
+            return false;
+        }
+    }
 
     void process() override {
          printf("Processing node: %s (ID: %d)\n", name.c_str(), id);

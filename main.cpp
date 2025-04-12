@@ -331,8 +331,51 @@ int main(int, char**)
                     }
                     ImGui::Separator();
 
-                    // --- TODO LATER: Add Save Button etc ---
-                    // if (ImGui::Button("Save Image...")) { /* ... */ }
+                    // Add Save Controls
+                    if (!outputNode->resultImage.empty()) {
+                        // Format selection
+                        const char* formats[] = { "PNG", "JPEG", "BMP" };
+                        static int formatIndex = 0;
+                        if (ImGui::Combo("Format", &formatIndex, formats, IM_ARRAYSIZE(formats))) {
+                            outputNode->selectedFormat = formats[formatIndex];
+                        }
+
+                        // Quality settings
+                        if (outputNode->selectedFormat == "JPEG") {
+                            ImGui::SliderInt("JPEG Quality", &outputNode->jpegQuality, 0, 100);
+                        } else if (outputNode->selectedFormat == "PNG") {
+                            ImGui::SliderInt("PNG Compression", &outputNode->pngCompression, 0, 9);
+                        }
+
+                        if (ImGui::Button("Save Image...")) {
+                            std::string extension = "." + outputNode->selectedFormat;
+                            std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+                            
+                            auto selection = pfd::save_file(
+                                "Save Image",
+                                ".",
+                                { "Image Files", "*" + extension },
+                                pfd::opt::none
+                            ).result();
+
+                            if (!selection.empty()) {
+                                outputNode->saveFilePath = selection;
+                                // Ensure correct extension
+                                if (outputNode->saveFilePath.substr(outputNode->saveFilePath.length() - extension.length()) != extension) {
+                                    outputNode->saveFilePath += extension;
+                                }
+                                
+                                if (outputNode->SaveImageToDisk()) {
+                                    printf("Image saved successfully to: %s\n", outputNode->saveFilePath.c_str());
+                                } else {
+                                    printf("Failed to save image to: %s\n", outputNode->saveFilePath.c_str());
+                                }
+                            }
+                        }
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No image data to save");
+                    }
+                    ImGui::Separator();
                 }
             }
         } else {
