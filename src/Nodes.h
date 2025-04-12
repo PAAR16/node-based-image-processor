@@ -371,3 +371,112 @@ struct ColorChannelSplitterNode : public Node {
         printf("  Channels split successfully.\n");
     }
 };
+
+
+// --- Blur Node ---
+struct BlurNode : public Node {
+    int radius = 3;           // Blur radius (1-20px)
+    bool directionalBlur = false;
+    float angle = 0.0f;       // Angle for directional blur (0-360 degrees)
+    bool showKernel = true;   // Toggle kernel preview
+    GLuint kernelPreviewTexId = 0;
+
+    BlurNode(int id, int inputPinId, int outputPinId) : Node(id, "Blur") {
+        // Input pin
+        Pin inPin(inputPinId, "Image", PinKind::Input);
+        inPin.node = this;
+        inputPins.push_back(inPin);
+
+        // Output pin
+        Pin outPin(outputPinId, "Output", PinKind::Output);
+        outPin.node = this;
+        outputPins.push_back(outPin);
+    }
+
+    ~BlurNode() override {
+        if (kernelPreviewTexId != 0) {
+            glDeleteTextures(1, &kernelPreviewTexId);
+        }
+    }
+
+    void UpdateKernelPreview() {
+        // Create kernel visualization
+        int kernelSize = radius * 2 + 1;
+        cv::Mat kernel = cv::getGaussianKernel(kernelSize, -1);
+        cv::Mat kernel2D = kernel * kernel.t();
+        
+        // Normalize kernel for visualization
+        cv::Mat kernelVis;
+        cv::normalize(kernel2D, kernelVis, 0, 255, cv::NORM_MINMAX);
+        kernelVis.convertTo(kernelVis, CV_8UC1);
+        
+        // Convert to RGBA for OpenGL texture
+        cv::Mat kernelRGBA;
+        cv::cvtColor(kernelVis, kernelRGBA, cv::COLOR_GRAY2RGBA);
+
+        // Generate or update texture
+        if (kernelPreviewTexId == 0) {
+            glGenTextures(1, &kernelPreviewTexId);
+        }
+
+        glBindTexture(GL_TEXTURE_2D, kernelPreviewTexId);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kernelSize, kernelSize, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, kernelRGBA.data);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    void process() override {
+        printf("Processing Blur node %d\n", id);
+
+        // Clear output
+        if (!outputPins.empty()) {
+            outputPins[0].imageData.release();
+        }
+
+        // Get input image
+        cv::Mat inputImage = GetInputImageData(inputPins[0]);
+        if (inputImage.empty()) {
+            printf("  No input image available.\n");
+            return;
+        }
+
+        // Create output image
+        cv::Mat outputImage;
+        int kernelSize = radius * 2 + 1;
+
+        if (directionalBlur) {
+            // Create motion blur kernel
+            cv::Mat kernel = cv::Mat::zeros(kernelSize, kernelSize, CV_32F);
+            cv::Point2f center(kernelSize / 2.0f, kernelSize / 2.0f);
+            cv::Point2f dir(cos(angle * CV_PI / 180.0f), sin(angle * CV_PI / 180.0f));
+            
+            // Draw line on kernel
+            for (int i = -radius; i <= radius; i++) {
+                cv::Point2f pt = center + dir * float(i);
+                if (pt.x >= 0 && pt.x < kernelSize && pt.y >= 0 && pt.y < kernelSize) {
+                    kernel.at<float>(int(pt.y), int(pt.x)) = 1.0f;
+                }
+            }
+            
+            // Normalize kernel
+            kernel = kernel / cv::sum(kernel)[0];
+            
+            // Apply directional blur
+            cv::filter2D(inputImage, outputImage, -1, kernel);
+        } else {
+            // Apply Gaussian blur
+            cv::GaussianBlur(inputImage, outputImage, cv::Size(kernelSize, kernelSize), 0);
+        }
+
+        // Update kernel preview
+        if (showKernel) {
+            UpdateKernelPreview();
+        }
+
+        // Store result
+        outputPins[0].imageData = outputImage;
+        printf("  Blur applied successfully.\n");
+    }
+};

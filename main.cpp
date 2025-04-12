@@ -204,6 +204,12 @@ int main(int, char**)
                 int pin_blue = g_Graph.nextPinId++;
                 QueueAddNode(new ColorChannelSplitterNode(node_id, pin_in, pin_red, pin_green, pin_blue));
             }
+            if (ImGui::MenuItem("Blur")) {
+                int node_id = g_Graph.nextNodeId++;
+                int pin_in = g_Graph.nextPinId++;
+                int pin_out = g_Graph.nextPinId++;
+                QueueAddNode(new BlurNode(node_id, pin_in, pin_out));
+            }
 
             ImGui::EndPopup();
         }
@@ -401,6 +407,34 @@ int main(int, char**)
                     ImGui::BulletText("Red (Channel 0)");
                     ImGui::BulletText("Green (Channel 1)");
                     ImGui::BulletText("Blue (Channel 2)");
+                }
+                else if (BlurNode* blurNode = dynamic_cast<BlurNode*>(selected_node)) {
+                    ImGui::Text("Blur Settings:");
+                    ImGui::Separator();
+
+                    bool changed = false;
+                    
+                    // Radius control
+                    changed |= ImGui::SliderInt("Radius", &blurNode->radius, 1, 20);
+                    
+                    // Blur type and direction
+                    changed |= ImGui::Checkbox("Directional Blur", &blurNode->directionalBlur);
+                    if (blurNode->directionalBlur) {
+                        changed |= ImGui::SliderAngle("Angle", &blurNode->angle, 0.0f, 360.0f);
+                    }
+                    
+                    // Kernel preview
+                    ImGui::Checkbox("Show Kernel", &blurNode->showKernel);
+                    if (blurNode->showKernel && blurNode->kernelPreviewTexId != 0) {
+                        ImGui::Text("Kernel Preview:");
+                        float kernelSize = (float)(blurNode->radius * 2 + 1);
+                        ImGui::Image((void*)(intptr_t)blurNode->kernelPreviewTexId, 
+                                    ImVec2(100, 100));
+                    }
+
+                    if (changed) {
+                        blurNode->process();
+                    }
                 }
             }
         } else {
