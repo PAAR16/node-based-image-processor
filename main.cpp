@@ -285,6 +285,51 @@ int main(int, char**)
              }
         }
 
+        // Handle Node Deletion
+        if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete))) {
+            // Get selected nodes
+            std::vector<int> selected_nodes;
+            for (Node* node : g_Graph.nodes) {
+                if (ImNodes::IsNodeSelected(node->id)) {
+                    selected_nodes.push_back(node->id);
+                }
+            }
+
+            if (!selected_nodes.empty()) {
+                // First, remove all links connected to the nodes being deleted
+                g_Graph.links.erase(
+                    std::remove_if(g_Graph.links.begin(), g_Graph.links.end(),
+                        [&selected_nodes](const Link& link) {
+                            // Find if either start or end of the link is connected to a selected node
+                            for (const Node* node : g_Graph.nodes) {
+                                if (std::find(selected_nodes.begin(), selected_nodes.end(), node->id) != selected_nodes.end()) {
+                                    // Check if link is connected to this node's pins
+                                    for (const Pin& pin : node->inputPins) {
+                                        if (pin.id == link.startPinId || pin.id == link.endPinId) return true;
+                                    }
+                                    for (const Pin& pin : node->outputPins) {
+                                        if (pin.id == link.startPinId || pin.id == link.endPinId) return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                    ),
+                    g_Graph.links.end()
+                );
+
+                // Then remove the selected nodes
+                for (int node_id : selected_nodes) {
+                    auto it = std::find_if(g_Graph.nodes.begin(), g_Graph.nodes.end(),
+                        [node_id](const Node* node) { return node->id == node_id; });
+                    if (it != g_Graph.nodes.end()) {
+                        delete *it; // Free the memory
+                        g_Graph.nodes.erase(it);
+                        printf("Deleted node %d\n", node_id);
+                    }
+                }
+            }
+        }
 
         // --- Rendering ---
         ImGui::Render();
