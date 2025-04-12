@@ -3,29 +3,48 @@
 #include "NodeGraph.h" // Include the base definitions
 #include <string>
 #include <opencv2/opencv.hpp> // Need OpenCV for image nodes
+#include <algorithm> // For std::transform
 
 // --- Image Input Node ---
 struct ImageInputNode : public Node {
     std::string filePath = "";
-    cv::Mat loadedImage; // OpenCV image data
+    cv::Mat loadedImage;
+    int imgWidth = 0;
+    int imgHeight = 0;
+    std::string imgFormat = ""; // Store format (from extension)
 
     ImageInputNode(int id, int pinId) : Node(id, "Image Input") {
-        // Explicitly create the pin and add to the correct vector
         Pin outPin(pinId, "Output", PinKind::Output);
         outPin.node = this;
-        outputPins.push_back(outPin); // Add to outputPins vector
+        outputPins.push_back(outPin);
     }
 
-    // Override the process method (example)
+    // Override the process method
     void process() override {
         printf("Processing node: %s (ID: %d)\n", name.c_str(), id);
+        loadedImage.release(); // Clear previous image data
+        imgWidth = 0;
+        imgHeight = 0;
+        imgFormat = "";
+
         if (!filePath.empty()) {
-            loadedImage = cv::imread(filePath);
+            printf("  Attempting to load image: %s\n", filePath.c_str());
+            loadedImage = cv::imread(filePath); // Load the image
             if (loadedImage.empty()) {
-                fprintf(stderr, "Error: Could not load image from %s\n", filePath.c_str());
+                fprintf(stderr, "  Error: Could not load image from %s\n", filePath.c_str());
+                // Keep path, but clear image data and metadata
             } else {
-                printf("  Loaded image: %s (%dx%d)\n", filePath.c_str(), loadedImage.cols, loadedImage.rows);
-                // Later: Pass this loadedImage to connected nodes
+                imgWidth = loadedImage.cols;
+                imgHeight = loadedImage.rows;
+                // Extract format from file extension (basic)
+                size_t dotPos = filePath.find_last_of(".");
+                if (dotPos != std::string::npos) {
+                    imgFormat = filePath.substr(dotPos + 1);
+                    // Convert to uppercase for display consistency
+                    std::transform(imgFormat.begin(), imgFormat.end(), imgFormat.begin(), ::toupper);
+                }
+                printf("  Loaded image: %s (%dx%d) Format: %s\n", filePath.c_str(), imgWidth, imgHeight, imgFormat.c_str());
+                // Later: Pass this loadedImage to connected nodes via outputPins[0]
             }
         } else {
             printf("  No file path set.\n");

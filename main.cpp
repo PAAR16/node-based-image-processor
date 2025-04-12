@@ -21,10 +21,14 @@
 #include <vector>
 #include <algorithm> // Required for std::remove_if
 #include <memory> // Useful for smart pointers later, optional for now
+#include <string> // For string manipulation
 
 // === Project Headers ===
 #include "src/NodeGraph.h" // Includes Pin, Link, Node base struct
 #include "src/Nodes.h"     // Includes specific node types like ImageInputNode, OutputNode
+
+// === File Dialog Include ===
+#include <portable-file-dialogs.h>
 
 // === Global Variables ===
 static NodeGraph g_Graph; // Holds all nodes and links
@@ -214,27 +218,45 @@ int main(int, char**)
 
                 // Node-specific properties
                 if (BrightnessContrastNode* bcNode = dynamic_cast<BrightnessContrastNode*>(selected_node)) {
-                    ImGui::Text("Brightness/Contrast Properties");
-                    bool changed = false;
-                    changed |= ImGui::SliderFloat("Brightness", &bcNode->brightness, -1.0f, 1.0f, "%.2f");
-                    changed |= ImGui::SliderFloat("Contrast", &bcNode->contrast, 0.0f, 2.0f, "%.2f");
+                    ImGui::Text("Parameters:");
+                    ImGui::Text("  Brightness: %.2f", bcNode->brightness);
+                    ImGui::Text("  Contrast: %.2f", bcNode->contrast);
+                    ImGui::Separator();
                     
+                    bool changed = false;
+                    changed |= ImGui::SliderFloat("Brightness", &bcNode->brightness, -100.0f, 100.0f, "%.0f");
+                    changed |= ImGui::SliderFloat("Contrast", &bcNode->contrast, 0.0f, 3.0f, "%.2f");
                     if (changed) {
-                        printf("Node %d properties updated\n", bcNode->id);
+                        printf("Node %d parameters updated (B:%.2f, C:%.2f)\n", bcNode->id, bcNode->brightness, bcNode->contrast);
                     }
                 }
                 else if (ImageInputNode* inputNode = dynamic_cast<ImageInputNode*>(selected_node)) {
-                    ImGui::Text("Image Input Properties");
-                    char pathBuffer[256];
-                    strncpy(pathBuffer, inputNode->filePath.c_str(), sizeof(pathBuffer) - 1);
-                    if (ImGui::InputText("File Path", pathBuffer, sizeof(pathBuffer))) {
-                        inputNode->filePath = pathBuffer;
-                        printf("File path updated: %s\n", pathBuffer);
-                    }
-                    
+                    ImGui::Text("Parameters:");
+                    ImGui::TextWrapped("File Path: %s", inputNode->filePath.empty() ? "<None>" : inputNode->filePath.c_str());
+
                     if (ImGui::Button("Browse...")) {
-                        // TODO: Add file browser functionality
-                        printf("Browse button clicked\n");
+                        auto selection = pfd::open_file("Select an Image",
+                            ".",
+                            { "Image Files", "*.jpg *.jpeg *.png *.bmp",
+                              "All Files", "*" },
+                            pfd::opt::none).result();
+
+                        if (!selection.empty()) {
+                            inputNode->filePath = selection[0];
+                            printf("Selected file: %s\n", inputNode->filePath.c_str());
+                            inputNode->process();
+                        } else {
+                            printf("File selection cancelled.\n");
+                        }
+                    }
+                    ImGui::Separator();
+
+                    ImGui::Text("Metadata:");
+                    if (inputNode->imgWidth > 0) {
+                        ImGui::Text("  Dimensions: %d x %d", inputNode->imgWidth, inputNode->imgHeight);
+                        ImGui::Text("  Format: %s", inputNode->imgFormat.c_str());
+                    } else {
+                        ImGui::Text("  <No image loaded>");
                     }
                 }
                 else if (OutputNode* outputNode = dynamic_cast<OutputNode*>(selected_node)) {
