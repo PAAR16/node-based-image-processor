@@ -40,7 +40,7 @@ set(IMGUI_SOURCES
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
-    ${IMGUI_DIR}/imgui_demo.cpp  # Include demo for debugging ImGui itself if needed
+    ${IMGUI_DIR}/imgui_demo.cpp  # Include demo for now
 )
 
 # ImGui Backend files (GLFW + OpenGL3)
@@ -49,10 +49,12 @@ set(IMGUI_BACKEND_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
 )
 
-# --- Add ImNodes Source Files --- [Using ImNodes]
+# --- Add ImNodes Source Files ---
 set(IMNODES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libs/imnodes)
 set(IMNODES_SOURCES
     ${IMNODES_DIR}/imnodes.cpp
+    # If imnodes required other cpp files like canvas or json, add them here
+    # Check the imnodes library files if linking errors occur
 )
 
 # --- Define Executable Target ---
@@ -60,19 +62,20 @@ set(IMNODES_SOURCES
 add_executable(NodeImageProcessor main.cpp
     ${IMGUI_SOURCES}
     ${IMGUI_BACKEND_SOURCES}
-    ${IMNODES_SOURCES}       # <-- Use ImNodes sources
+    ${IMNODES_SOURCES}
 )
 
 # --- Include Directories ---
 # Tell the target where to find header files (.h files)
 target_include_directories(NodeImageProcessor PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${OpenCV_INCLUDE_DIRS}
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
-    ${IMNODES_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/libs/pfd # <-- ADD THIS LINE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src # Include src directory for project headers
+    ${OpenCV_INCLUDE_DIRS}    # OpenCV headers
+    ${IMGUI_DIR}              # ImGui core headers
+    ${IMGUI_DIR}/backends     # ImGui backend headers
+    ${IMNODES_DIR}            # ImNodes include directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/pfd # portable-file-dialogs header
 )
+
 # --- Link Libraries ---
 # Link the executable against the libraries it needs
 target_link_libraries(NodeImageProcessor PUBLIC
@@ -98,4 +101,4 @@ message(STATUS "  Using OpenCV: ${OpenCV_VERSION} (Include: ${OpenCV_INCLUDE_DIR
 message(STATUS "  Using GLFW3: ${glfw3_VERSION_STRING} (Found: ${glfw3_FOUND})")
 message(STATUS "  Using OpenGL: ${OPENGL_FOUND} (Version: ${OPENGL_GL_VERSION_STRING})")
 message(STATUS "  Using ImGui from: ${IMGUI_DIR}")
-message(STATUS "  Using ImNodes from: ${IMNODES_DIR}") # Updated message
+message(STATUS "  Using ImNodes from: ${IMNODES_DIR}")

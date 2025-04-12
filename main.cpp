@@ -31,7 +31,7 @@
 #include <portable-file-dialogs.h>
 
 // === Global Variables ===
-static NodeGraph g_Graph; // Holds all nodes and links
+NodeGraph g_Graph; // Holds all nodes and links
 
 // === Helper Functions ===
 static void glfw_error_callback(int error, const char* description)
@@ -49,6 +49,28 @@ Node* FindNodeById(int id) {
     return nullptr;
 }
 
+// --- NEW HELPER: Find Pin by ID ---
+Pin* FindPinById(int id) {
+    for (Node* node : g_Graph.nodes) {
+        for (Pin& pin : node->inputPins) {
+            if (pin.id == id) return &pin;
+        }
+        for (Pin& pin : node->outputPins) {
+            if (pin.id == id) return &pin;
+        }
+    }
+    return nullptr;
+}
+
+// --- NEW HELPER: Check if Input Pin Already Linked ---
+bool IsInputPinLinked(int inputPinId) {
+    for (const Link& link : g_Graph.links) {
+        if (link.endPinId == inputPinId) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // === Main Application ===
 int main(int, char**)
@@ -190,6 +212,12 @@ int main(int, char**)
         ImGui::Text("Properties");
         ImGui::Separator();
 
+        // NEW: Add Process Button at the top of properties panel
+        if (ImGui::Button("Process Graph")) {
+            g_Graph.ExecuteGraph(); // Call the graph execution function
+        }
+        ImGui::Separator();
+
         int first_selected_node_id = -1;
         int selected_count = 0;
 
@@ -224,10 +252,29 @@ int main(int, char**)
                     ImGui::Separator();
                     
                     bool changed = false;
-                    changed |= ImGui::SliderFloat("Brightness", &bcNode->brightness, -100.0f, 100.0f, "%.0f");
-                    changed |= ImGui::SliderFloat("Contrast", &bcNode->contrast, 0.0f, 3.0f, "%.2f");
+                    if (ImGui::Button("Reset All##BrightnessContrast")) {
+                        bcNode->reset();
+                    }
+                    
+                    // Brightness control with reset
+                    if (ImGui::Button("Reset##Brightness")) {
+                        bcNode->brightness = bcNode->DEFAULT_BRIGHTNESS;
+                        changed = true;
+                    }
+                    ImGui::SameLine();
+                    changed |= ImGui::SliderFloat("Brightness", &bcNode->brightness, -100.0f, 100.0f);
+                    
+                    // Contrast control with reset
+                    if (ImGui::Button("Reset##Contrast")) {
+                        bcNode->contrast = bcNode->DEFAULT_CONTRAST;
+                        changed = true;
+                    }
+                    ImGui::SameLine();
+                    changed |= ImGui::SliderFloat("Contrast", &bcNode->contrast, 0.0f, 3.0f);
+                    
                     if (changed) {
                         printf("Node %d parameters updated (B:%.2f, C:%.2f)\n", bcNode->id, bcNode->brightness, bcNode->contrast);
+                        bcNode->process();
                     }
                 }
                 else if (ImageInputNode* inputNode = dynamic_cast<ImageInputNode*>(selected_node)) {
@@ -261,7 +308,31 @@ int main(int, char**)
                 }
                 else if (OutputNode* outputNode = dynamic_cast<OutputNode*>(selected_node)) {
                     ImGui::Text("Output Properties");
-                    // Add output node specific properties here
+                    ImGui::Separator();
+
+                    // --- NEW: Display Preview Image ---
+                    if (outputNode->previewTextureId != 0 && outputNode->textureWidth > 0 && outputNode->textureHeight > 0)
+                    {
+                        ImGui::Text("Preview:");
+                        // Display the texture using ImGui::Image
+                        // Ensure correct casting for ImTextureID (depends on ImGui backend)
+                        // For OpenGL, it's typically the GLuint cast to void*
+                        ImTextureID tex_id = (void*)(intptr_t)outputNode->previewTextureId;
+
+                        // Control preview size (e.g., fit width)
+                        float panelWidth = ImGui::GetContentRegionAvail().x;
+                        float aspect = (float)outputNode->textureHeight / (float)outputNode->textureWidth;
+                        float previewHeight = panelWidth * aspect;
+                        ImVec2 previewSize(panelWidth, previewHeight);
+
+                        ImGui::Image(tex_id, previewSize);
+                    } else {
+                        ImGui::Text("Preview: <No image data>");
+                    }
+                    ImGui::Separator();
+
+                    // --- TODO LATER: Add Save Button etc ---
+                    // if (ImGui::Button("Save Image...")) { /* ... */ }
                 }
             }
         } else {
@@ -288,13 +359,55 @@ int main(int, char**)
         }
 
 
-        // Handle Link Creation / Deletion
-        int start_attr, end_attr;
-        if (ImNodes::IsLinkCreated(&start_attr, &end_attr)) {
-             printf("Link created: %d -> %d\n", start_attr, end_attr);
-             int linkId = g_Graph.nextLinkId++;
-             g_Graph.links.push_back(Link(linkId, start_attr, end_attr));
-             // TODO: Add link validation here
+        // Handle Link Creation with Validation [MODIFIED BLOCK]
+        int start_pin_id, end_pin_id;
+        if (ImNodes::IsLinkCreated(&start_pin_id, &end_pin_id))
+        {
+            printf("Link creation attempt: %d -> %d\n", start_pin_id, end_pin_id);
+
+            Pin* startPin = FindPinById(start_pin_id);
+            Pin* endPin = FindPinById(end_pin_id);
+            bool linkIsValid = true;
+
+            // 1. Check if pins were found
+            if (!startPin || !endPin) {
+                fprintf(stderr, "  Error: Could not find pins for link creation (%d or %d).\n", 
+                        start_pin_id, end_pin_id);
+                linkIsValid = false;
+            }
+
+            // 2. Check Input/Output compatibility
+            if (linkIsValid && startPin->kind == endPin->kind) {
+                fprintf(stderr, "  Error: Cannot link %s pin to %s pin.\n",
+                        (startPin->kind == PinKind::Input ? "Input" : "Output"),
+                        (endPin->kind == PinKind::Input ? "Input" : "Output"));
+                linkIsValid = false;
+            }
+
+            // 3. Ensure start is Output, end is Input
+            if (linkIsValid && startPin->kind == PinKind::Input) {
+                std::swap(start_pin_id, end_pin_id);
+                std::swap(startPin, endPin);
+                printf("    (Swapped link direction: Now %d -> %d)\n", start_pin_id, end_pin_id);
+            }
+
+            // 4. Check if Input pin already has a connection
+            if (linkIsValid && IsInputPinLinked(endPin->id)) {
+                fprintf(stderr, "  Error: Input pin %d (%s on Node %d) is already connected.\n",
+                        endPin->id, endPin->name.c_str(), endPin->node->id);
+                linkIsValid = false;
+            }
+
+            // 5. TODO: Add Data Type Compatibility Check here later if needed
+
+            // 6. Add the link if all checks passed
+            if (linkIsValid) {
+                int linkId = g_Graph.nextLinkId++;
+                printf("  Link VALID. Adding Link %d (%d -> %d)\n", linkId, start_pin_id, end_pin_id);
+                g_Graph.links.push_back(Link(linkId, start_pin_id, end_pin_id));
+            } else {
+                printf("  Link INVALID. Link not added.\n");
+            }
         }
 
         int link_id_to_destroy;

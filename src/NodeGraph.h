@@ -2,9 +2,10 @@
 
 #include <vector>
 #include <map>
-#include <string> // Also include string for std::string usage
-
-#include <imgui.h> // <-- ADD THIS INCLUDE for ImVec2
+#include <string>
+#include <imgui.h>
+#include <opencv2/opencv.hpp>
+#include <optional>
 
 // Forward Declarations (to avoid circular includes)
 struct Node;
@@ -21,7 +22,7 @@ struct Pin {
     Node* node;     // Node this pin belongs to
     PinKind kind;
     std::string name; // Display name (e.g., "Image In", "Result Out")
-    // We'll add data type information later (e.g., Image, Float)
+    cv::Mat imageData; // NEW: Storage for image data
 
     // Constructor (optional but helpful)
     Pin(int id_ = 0, const char* name_ = "Pin", PinKind kind_ = PinKind::Input) :
@@ -87,8 +88,14 @@ struct NodeGraph {
     int nextPinId = 100; // Start pin IDs higher to avoid collision with node IDs
     int nextLinkId = 1000; // Start link IDs even higher
 
-    // We'll add functions here later to add/remove nodes/links,
-    // find nodes/pins by ID, and execute the graph.
+    // NEW: Graph Execution
+    void ExecuteGraph() {
+        printf("\n--- Executing Graph ---\n");
+        for (Node* node : nodes) {
+            node->process();
+        }
+        printf("--- Graph Execution Finished ---\n");
+    }
 
     // Destructor to clean up nodes
     ~NodeGraph() {
@@ -98,3 +105,36 @@ struct NodeGraph {
         nodes.clear();
     }
 };
+
+// --- NEW: Helper Function Declaration ---
+std::optional<cv::Mat> GetInputImageData(const NodeGraph& graph, int inputPinId);
+
+// --- NEW: Helper Function Definition ---
+std::optional<cv::Mat> GetInputImageData(const NodeGraph& graph, int inputPinId) {
+    int sourceOutputPinId = -1;
+
+    for (const auto& link : graph.links) {
+        if (link.endPinId == inputPinId) {
+            sourceOutputPinId = link.startPinId;
+            break;
+        }
+    }
+
+    if (sourceOutputPinId == -1) {
+        return std::nullopt;
+    }
+
+    for (const auto& node : graph.nodes) {
+        for (const auto& outputPin : node->outputPins) {
+            if (outputPin.id == sourceOutputPinId) {
+                if (!outputPin.imageData.empty()) {
+                    return outputPin.imageData;
+                } else {
+                    return std::nullopt;
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
