@@ -210,6 +210,18 @@ int main(int, char**)
                 int pin_out = g_Graph.nextPinId++;
                 QueueAddNode(new BlurNode(node_id, pin_in, pin_out));
             }
+            if (ImGui::MenuItem("Threshold")) {
+                int node_id = g_Graph.nextNodeId++;
+                int pin_in = g_Graph.nextPinId++;
+                int pin_out = g_Graph.nextPinId++;
+                QueueAddNode(new ThresholdNode(node_id, pin_in, pin_out));
+            }
+            if (ImGui::MenuItem("Edge Detection")) {
+                int node_id = g_Graph.nextNodeId++;
+                int pin_in = g_Graph.nextPinId++;
+                int pin_out = g_Graph.nextPinId++;
+                QueueAddNode(new EdgeDetectionNode(node_id, pin_in, pin_out));
+            }
 
             ImGui::EndPopup();
         }
@@ -434,6 +446,65 @@ int main(int, char**)
 
                     if (changed) {
                         blurNode->process();
+                    }
+                }
+                else if (ThresholdNode* threshNode = dynamic_cast<ThresholdNode*>(selected_node)) {
+                    ImGui::Text("Threshold Settings:");
+                    ImGui::Separator();
+
+                    bool changed = false;
+
+                    // Threshold method selection
+                    const char* methods[] = { "Binary", "Adaptive", "Otsu" };
+                    changed |= ImGui::Combo("Method", &threshNode->thresholdMethod, methods, IM_ARRAYSIZE(methods));
+
+                    // Method-specific controls
+                    if (threshNode->thresholdMethod == 0) { // Binary
+                        changed |= ImGui::SliderInt("Threshold", &threshNode->thresholdValue, 0, 255);
+                    }
+                    else if (threshNode->thresholdMethod == 1) { // Adaptive
+                        changed |= ImGui::SliderInt("Block Size", &threshNode->blockSize, 3, 99, "%d");
+                        if (threshNode->blockSize % 2 == 0) threshNode->blockSize++; // Ensure odd
+                        changed |= ImGui::SliderFloat("C", &threshNode->C, -10.0f, 10.0f); // Now using float
+                    }
+
+                    // Show histogram
+                    if (threshNode->histogramTexId != 0) {
+                        ImGui::Text("Histogram:");
+                        ImGui::Image((void*)(intptr_t)threshNode->histogramTexId, 
+                                    ImVec2(256, 100));
+                    }
+
+                    if (changed) {
+                        threshNode->process();
+                    }
+                }
+                else if (EdgeDetectionNode* edgeNode = dynamic_cast<EdgeDetectionNode*>(selected_node)) {
+                    ImGui::Text("Edge Detection Settings:");
+                    ImGui::Separator();
+
+                    bool changed = false;
+
+                    // Algorithm selection
+                    const char* algorithms[] = { "Sobel", "Canny" };
+                    changed |= ImGui::Combo("Algorithm", &edgeNode->algorithm, algorithms, IM_ARRAYSIZE(algorithms));
+
+                    if (edgeNode->algorithm == 0) { // Sobel
+                        const char* sizes[] = { "3x3", "5x5", "7x7" };
+                        int sizeIndex = (edgeNode->kernelSize - 3) / 2;
+                        if (ImGui::Combo("Kernel Size", &sizeIndex, sizes, IM_ARRAYSIZE(sizes))) {
+                            edgeNode->kernelSize = 3 + (sizeIndex * 2);
+                            changed = true;
+                        }
+                    } else { // Canny
+                        changed |= ImGui::SliderInt("Lower Threshold", &edgeNode->cannyThresh1, 0, 255);
+                        changed |= ImGui::SliderInt("Upper Threshold", &edgeNode->cannyThresh2, 0, 255);
+                    }
+
+                    changed |= ImGui::Checkbox("Overlay on Original", &edgeNode->overlayMode);
+
+                    if (changed) {
+                        edgeNode->process();
                     }
                 }
             }

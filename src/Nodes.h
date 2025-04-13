@@ -480,3 +480,200 @@ struct BlurNode : public Node {
         printf("  Blur applied successfully.\n");
     }
 };
+
+
+// --- Threshold Node ---
+struct ThresholdNode : public Node {
+    int thresholdValue = 127;  // Default threshold value (0-255)
+    int thresholdMethod = 0;   // 0=Binary, 1=Adaptive, 2=Otsu
+    int blockSize = 11;        // For adaptive threshold (must be odd)
+    float C = 2.0f;            // Changed from double to float
+    GLuint histogramTexId = 0; // For histogram visualization
+    std::vector<int> histogram;// Store histogram data
+
+    ThresholdNode(int id, int inputPinId, int outputPinId) : Node(id, "Threshold") {
+        // Input pin
+        Pin inPin(inputPinId, "Image", PinKind::Input);
+        inPin.node = this;
+        inputPins.push_back(inPin);
+
+        // Output pin
+        Pin outPin(outputPinId, "Output", PinKind::Output);
+        outPin.node = this;
+        outputPins.push_back(outPin);
+    }
+
+    ~ThresholdNode() override {
+        if (histogramTexId != 0) {
+            glDeleteTextures(1, &histogramTexId);
+        }
+    }
+
+    void UpdateHistogram(const cv::Mat& image) {
+        histogram.assign(256, 0);
+        
+        // Convert to grayscale if needed
+        cv::Mat gray;
+        if (image.channels() > 1) {
+            cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+        } else {
+            gray = image.clone();
+        }
+
+        // Calculate histogram
+        for (int i = 0; i < gray.rows; i++) {
+            for (int j = 0; j < gray.cols; j++) {
+                histogram[gray.at<uchar>(i, j)]++;
+            }
+        }
+
+        // Create histogram visualization
+        int histHeight = 100;
+        cv::Mat histImage = cv::Mat::zeros(histHeight, 256, CV_8UC4);
+        
+        // Find maximum for normalization
+        int maxVal = *std::max_element(histogram.begin(), histogram.end());
+        
+        // Draw histogram
+        for (int i = 0; i < 256; i++) {
+            int height = static_cast<int>((histogram[i] * histHeight) / maxVal);
+            cv::line(histImage, 
+                    cv::Point(i, histHeight - 1), 
+                    cv::Point(i, histHeight - height - 1),
+                    cv::Scalar(255, 255, 255, 255));
+            
+            // Draw threshold line in red
+            if (i == thresholdValue && thresholdMethod == 0) {
+                cv::line(histImage,
+                        cv::Point(i, 0),
+                        cv::Point(i, histHeight - 1),
+                        cv::Scalar(255, 0, 0, 255));
+            }
+        }
+
+        // Update OpenGL texture
+        if (histogramTexId == 0) {
+            glGenTextures(1, &histogramTexId);
+        }
+
+        glBindTexture(GL_TEXTURE_2D, histogramTexId);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, histImage.cols, histImage.rows, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, histImage.data);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    void process() override {
+        printf("Processing Threshold node %d\n", id);
+
+        // Clear output
+        if (!outputPins.empty()) {
+            outputPins[0].imageData.release();
+        }
+
+        // Get input image
+        cv::Mat inputImage = GetInputImageData(inputPins[0]);
+        if (inputImage.empty()) {
+            printf("  No input image available.\n");
+            return;
+        }
+
+        // Convert to grayscale if needed
+        cv::Mat gray;
+        if (inputImage.channels() > 1) {
+            cv::cvtColor(inputImage, gray, cv::COLOR_BGR2GRAY);
+        } else {
+            gray = inputImage.clone();
+        }
+
+        // Update histogram
+        UpdateHistogram(gray);
+
+        // Apply thresholding
+        cv::Mat result;
+        switch (thresholdMethod) {
+            case 0: // Binary
+                cv::threshold(gray, result, thresholdValue, 255, cv::THRESH_BINARY);
+                break;
+            case 1: // Adaptive
+                cv::adaptiveThreshold(gray, result, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+                                    cv::THRESH_BINARY, blockSize, C);
+                break;
+            case 2: // Otsu
+                cv::threshold(gray, result, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+                break;
+        }
+
+        // Convert back to BGR for display
+        cv::cvtColor(result, outputPins[0].imageData, cv::COLOR_GRAY2BGR);
+        printf("  Thresholding applied successfully.\n");
+    }
+};
+
+
+// --- Edge Detection Node ---
+struct EdgeDetectionNode : public Node {
+    int algorithm = 0;     // 0=Sobel, 1=Canny
+    int kernelSize = 3;    // 3, 5, or 7 for Sobel
+    int cannyThresh1 = 100;// First threshold for Canny
+    int cannyThresh2 = 200;// Second threshold for Canny
+    bool overlayMode = false;// Overlay edges on original image
+    
+    EdgeDetectionNode(int id, int inputPinId, int outputPinId) : Node(id, "Edge Detection") {
+        Pin inPin(inputPinId, "Image", PinKind::Input);
+        inPin.node = this;
+        inputPins.push_back(inPin);
+
+        Pin outPin(outputPinId, "Output", PinKind::Output);
+        outPin.node = this;
+        outputPins.push_back(outPin);
+    }
+
+    void process() override {
+        printf("Processing Edge Detection node %d\n", id);
+        
+        if (!outputPins.empty()) {
+            outputPins[0].imageData.release();
+        }
+
+        cv::Mat inputImage = GetInputImageData(inputPins[0]);
+        if (inputImage.empty()) {
+            printf("  No input image available.\n");
+            return;
+        }
+
+        // Convert to grayscale if needed
+        cv::Mat gray;
+        if (inputImage.channels() > 1) {
+            cv::cvtColor(inputImage, gray, cv::COLOR_BGR2GRAY);
+        } else {
+            gray = inputImage.clone();
+        }
+
+        cv::Mat edges;
+        if (algorithm == 0) { // Sobel
+            cv::Mat gradX, gradY;
+            cv::Sobel(gray, gradX, CV_16S, 1, 0, kernelSize);
+            cv::Sobel(gray, gradY, CV_16S, 0, 1, kernelSize);
+            
+            cv::Mat absGradX, absGradY;
+            cv::convertScaleAbs(gradX, absGradX);
+            cv::convertScaleAbs(gradY, absGradY);
+            
+            cv::addWeighted(absGradX, 0.5, absGradY, 0.5, 0, edges);
+        } else { // Canny
+            cv::Canny(gray, edges, cannyThresh1, cannyThresh2);
+        }
+
+        if (overlayMode && inputImage.channels() == 3) {
+            cv::Mat overlay = inputImage.clone();
+            overlay.setTo(cv::Scalar(0, 255, 0), edges); // Green edges
+            cv::addWeighted(overlay, 0.7, inputImage, 0.3, 0, outputPins[0].imageData);
+        } else {
+            cv::cvtColor(edges, outputPins[0].imageData, cv::COLOR_GRAY2BGR);
+        }
+
+        printf("  Edge detection completed successfully.\n");
+    }
+};
