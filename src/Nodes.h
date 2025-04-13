@@ -677,3 +677,130 @@ struct EdgeDetectionNode : public Node {
         printf("  Edge detection completed successfully.\n");
     }
 };
+
+
+// --- Blend Node ---
+struct BlendNode : public Node {
+    int blendMode = 0;    // 0=Normal, 1=Multiply, 2=Screen, 3=Overlay, 4=Difference
+    float opacity = 1.0f; // 0.0 to 1.0
+
+    BlendNode(int id, int inputPin1Id, int inputPin2Id, int outputPinId) 
+        : Node(id, "Blend") {
+        // Input pin 1 (Base Image)
+        Pin inPin1(inputPin1Id, "Base", PinKind::Input);
+        inPin1.node = this;
+        inputPins.push_back(inPin1);
+
+        // Input pin 2 (Blend Image)
+        Pin inPin2(inputPin2Id, "Blend", PinKind::Input);
+        inPin2.node = this;
+        inputPins.push_back(inPin2);
+
+        // Output pin
+        Pin outPin(outputPinId, "Output", PinKind::Output);
+        outPin.node = this;
+        outputPins.push_back(outPin);
+    }
+
+    cv::Mat applyBlend(const cv::Mat& base, const cv::Mat& blend) {
+        cv::Mat result;
+        
+        switch (blendMode) {
+            case 0: { // Normal
+                cv::addWeighted(base, 1.0 - opacity, blend, opacity, 0.0, result);
+                break;
+            }
+                
+            case 1: { // Multiply
+                cv::multiply(base, blend, result, 1.0/255.0);
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+                
+            case 2: { // Screen
+                cv::Mat invBase, invBlend;
+                cv::bitwise_not(base, invBase);
+                cv::bitwise_not(blend, invBlend);
+                cv::multiply(invBase, invBlend, result, 1.0/255.0);
+                cv::bitwise_not(result, result);
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+                
+            case 3: { // Overlay
+                result = base.clone();
+                for(int i = 0; i < base.rows; i++) {
+                    for(int j = 0; j < base.cols; j++) {
+                        for(int c = 0; c < 3; c++) {
+                            float baseVal = base.at<cv::Vec3b>(i,j)[c] / 255.0f;
+                            float blendVal = blend.at<cv::Vec3b>(i,j)[c] / 255.0f;
+                            float val;
+                            if(baseVal < 0.5f)
+                                val = 2.0f * baseVal * blendVal;
+                            else
+                                val = 1.0f - 2.0f * (1.0f - baseVal) * (1.0f - blendVal);
+                            result.at<cv::Vec3b>(i,j)[c] = cv::saturate_cast<uchar>(val * 255.0f);
+                        }
+                    }
+                }
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+                
+            case 4: { // Difference
+                cv::absdiff(base, blend, result);
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+        }
+        return result;
+    }
+
+    void process() override {
+        printf("Processing Blend node %d\n", id);
+
+        // Clear output
+        if (!outputPins.empty()) {
+            outputPins[0].imageData.release();
+        }
+
+        // Check for both input images
+        if (inputPins.size() < 2) {
+            printf("  Error: Blend node requires two inputs\n");
+            return;
+        }
+
+        cv::Mat baseImage = GetInputImageData(inputPins[0]);
+        cv::Mat blendImage = GetInputImageData(inputPins[1]);
+
+        if (baseImage.empty() || blendImage.empty()) {
+            printf("  Error: One or both input images missing\n");
+            return;
+        }
+
+        // Ensure both images are the same size
+        if (baseImage.size() != blendImage.size()) {
+            cv::resize(blendImage, blendImage, baseImage.size());
+        }
+
+        // Ensure both images are BGR
+        if (baseImage.channels() == 1) {
+            cv::cvtColor(baseImage, baseImage, cv::COLOR_GRAY2BGR);
+        }
+        if (blendImage.channels() == 1) {
+            cv::cvtColor(blendImage, blendImage, cv::COLOR_GRAY2BGR);
+        }
+
+        // Apply blend
+        outputPins[0].imageData = applyBlend(baseImage, blendImage);
+        printf("  Blend applied successfully.\n");
+    }
+};

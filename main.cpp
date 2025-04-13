@@ -222,6 +222,13 @@ int main(int, char**)
                 int pin_out = g_Graph.nextPinId++;
                 QueueAddNode(new EdgeDetectionNode(node_id, pin_in, pin_out));
             }
+            if (ImGui::MenuItem("Blend")) {
+                int node_id = g_Graph.nextNodeId++;
+                int pin_in1 = g_Graph.nextPinId++;
+                int pin_in2 = g_Graph.nextPinId++;
+                int pin_out = g_Graph.nextPinId++;
+                QueueAddNode(new BlendNode(node_id, pin_in1, pin_in2, pin_out));
+            }
 
             ImGui::EndPopup();
         }
@@ -505,6 +512,23 @@ int main(int, char**)
 
                     if (changed) {
                         edgeNode->process();
+                    }
+                }
+                else if (BlendNode* blendNode = dynamic_cast<BlendNode*>(selected_node)) {
+                    ImGui::Text("Blend Settings:");
+                    ImGui::Separator();
+
+                    bool changed = false;
+
+                    // Blend mode selection
+                    const char* modes[] = { "Normal", "Multiply", "Screen", "Overlay", "Difference" };
+                    changed |= ImGui::Combo("Blend Mode", &blendNode->blendMode, modes, IM_ARRAYSIZE(modes));
+
+                    // Opacity control
+                    changed |= ImGui::SliderFloat("Opacity", &blendNode->opacity, 0.0f, 1.0f);
+
+                    if (changed) {
+                        blendNode->process();
                     }
                 }
             }
