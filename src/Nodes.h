@@ -677,3 +677,377 @@ struct EdgeDetectionNode : public Node {
         printf("  Edge detection completed successfully.\n");
     }
 };
+
+
+// --- Blend Node ---
+struct BlendNode : public Node {
+    int blendMode = 0;    // 0=Normal, 1=Multiply, 2=Screen, 3=Overlay, 4=Difference
+    float opacity = 1.0f; // 0.0 to 1.0
+
+    BlendNode(int id, int inputPin1Id, int inputPin2Id, int outputPinId) 
+        : Node(id, "Blend") {
+        // Input pin 1 (Base Image)
+        Pin inPin1(inputPin1Id, "Base", PinKind::Input);
+        inPin1.node = this;
+        inputPins.push_back(inPin1);
+
+        // Input pin 2 (Blend Image)
+        Pin inPin2(inputPin2Id, "Blend", PinKind::Input);
+        inPin2.node = this;
+        inputPins.push_back(inPin2);
+
+        // Output pin
+        Pin outPin(outputPinId, "Output", PinKind::Output);
+        outPin.node = this;
+        outputPins.push_back(outPin);
+    }
+
+    cv::Mat applyBlend(const cv::Mat& base, const cv::Mat& blend) {
+        cv::Mat result;
+        
+        switch (blendMode) {
+            case 0: { // Normal
+                cv::addWeighted(base, 1.0 - opacity, blend, opacity, 0.0, result);
+                break;
+            }
+                
+            case 1: { // Multiply
+                cv::multiply(base, blend, result, 1.0/255.0);
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+                
+            case 2: { // Screen
+                cv::Mat invBase, invBlend;
+                cv::bitwise_not(base, invBase);
+                cv::bitwise_not(blend, invBlend);
+                cv::multiply(invBase, invBlend, result, 1.0/255.0);
+                cv::bitwise_not(result, result);
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+                
+            case 3: { // Overlay
+                result = base.clone();
+                for(int i = 0; i < base.rows; i++) {
+                    for(int j = 0; j < base.cols; j++) {
+                        for(int c = 0; c < 3; c++) {
+                            float baseVal = base.at<cv::Vec3b>(i,j)[c] / 255.0f;
+                            float blendVal = blend.at<cv::Vec3b>(i,j)[c] / 255.0f;
+                            float val;
+                            if(baseVal < 0.5f)
+                                val = 2.0f * baseVal * blendVal;
+                            else
+                                val = 1.0f - 2.0f * (1.0f - baseVal) * (1.0f - blendVal);
+                            result.at<cv::Vec3b>(i,j)[c] = cv::saturate_cast<uchar>(val * 255.0f);
+                        }
+                    }
+                }
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+                
+            case 4: { // Difference
+                cv::absdiff(base, blend, result);
+                if (opacity < 1.0f) {
+                    cv::addWeighted(base, 1.0 - opacity, result, opacity, 0.0, result);
+                }
+                break;
+            }
+        }
+        return result;
+    }
+
+    void process() override {
+        printf("Processing Blend node %d\n", id);
+
+        // Clear output
+        if (!outputPins.empty()) {
+            outputPins[0].imageData.release();
+        }
+
+        // Check for both input images
+        if (inputPins.size() < 2) {
+            printf("  Error: Blend node requires two inputs\n");
+            return;
+        }
+
+        cv::Mat baseImage = GetInputImageData(inputPins[0]);
+        cv::Mat blendImage = GetInputImageData(inputPins[1]);
+
+        if (baseImage.empty() || blendImage.empty()) {
+            printf("  Error: One or both input images missing\n");
+            return;
+        }
+
+        // Ensure both images are the same size
+        if (baseImage.size() != blendImage.size()) {
+            cv::resize(blendImage, blendImage, baseImage.size());
+        }
+
+        // Ensure both images are BGR
+        if (baseImage.channels() == 1) {
+            cv::cvtColor(baseImage, baseImage, cv::COLOR_GRAY2BGR);
+        }
+        if (blendImage.channels() == 1) {
+            cv::cvtColor(blendImage, blendImage, cv::COLOR_GRAY2BGR);
+        }
+
+        // Apply blend
+        outputPins[0].imageData = applyBlend(baseImage, blendImage);
+        printf("  Blend applied successfully.\n");
+    }
+};
+
+
+// --- Noise Generation Node ---
+struct NoiseGenerationNode : public Node {
+    int noiseType = 0;      // 0=Perlin, 1=Simplex, 2=Worley
+    float scale = 50.0f;    // Noise scale
+    int octaves = 4;        // Number of octaves (1-8)
+    float persistence = 0.5f;// How much each octave contributes
+    int width = 512;        // Output image width
+    int height = 512;       // Output image height
+    bool useAsDisplacement = false; // Displacement map or direct output
+    
+    NoiseGenerationNode(int id, int outputPinId) : Node(id, "Noise Generator") {
+        Pin outPin(outputPinId, "Output", PinKind::Output);
+        outPin.node = this;
+        outputPins.push_back(outPin);
+    }
+
+    float perlinNoise(float x, float y) {
+        // Basic Perlin noise implementation
+        int X = (int)floor(x) & 255;
+        int Y = (int)floor(y) & 255;
+        x -= floor(x);
+        y -= floor(y);
+        float u = fade(x);
+        float v = fade(y);
+        int A = p[X]+Y;
+        int B = p[X+1]+Y;
+        return lerp(v, lerp(u, grad(p[A], x, y), 
+                              grad(p[B], x-1, y)),
+                      lerp(u, grad(p[A+1], x, y-1),
+                              grad(p[B+1], x-1, y-1)));
+    }
+
+    void process() override {
+        printf("Processing Noise Generation node %d\n", id);
+        
+        cv::Mat noiseImage(height, width, CV_8UC3);
+        
+        for(int y = 0; y < height; y++) {
+            for(int x = 0; x < width; x++) {
+                float nx = x * scale / width;
+                float ny = y * scale / height;
+                float value = 0.0f;
+                float amplitude = 1.0f;
+                float frequency = 1.0f;
+                float maxValue = 0.0f;
+                
+                // Generate octaves
+                for(int i = 0; i < octaves; i++) {
+                    value += amplitude * perlinNoise(nx * frequency, ny * frequency);
+                    maxValue += amplitude;
+                    amplitude *= persistence;
+                    frequency *= 2.0f;
+                }
+                
+                value = value / maxValue;
+                value = (value + 1.0f) * 0.5f; // Normalize to 0-1
+                uchar pixelValue = static_cast<uchar>(value * 255);
+                
+                if (useAsDisplacement) {
+                    // Create displacement effect (grayscale)
+                    noiseImage.at<cv::Vec3b>(y, x) = cv::Vec3b(pixelValue, pixelValue, pixelValue);
+                } else {
+                    // Create colored noise
+                    noiseImage.at<cv::Vec3b>(y, x) = cv::Vec3b(
+                        static_cast<uchar>(value * 255),
+                        static_cast<uchar>((1-value) * 255),
+                        static_cast<uchar>(value * 128 + 64)
+                    );
+                }
+            }
+        }
+        
+        outputPins[0].imageData = noiseImage;
+    }
+
+private:
+    static float fade(float t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    static float lerp(float t, float a, float b) { return a + t * (b - a); }
+    static float grad(int hash, float x, float y) {
+        int h = hash & 15;
+        float u = h < 8 ? x : y;
+        float v = h < 4 ? y : x;
+        return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+    }
+    static const int p[512]; // Permutation table (defined elsewhere)
+};
+
+// Add this definition outside the class
+const int NoiseGenerationNode::p[512] = {
+    151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+    8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+    35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+    134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+    55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,
+    18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+    250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+    189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+    172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+    228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+    107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+    138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180,
+    // Repeat the array to avoid overflow
+    151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+    8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+    35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+    134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+    55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,
+    18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+    250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+    189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+    172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+    228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+    107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+    138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
+};
+
+
+// --- Convolution Filter Node ---
+struct ConvolutionFilterNode : public Node {
+    static const int MAX_KERNEL_SIZE = 5;
+    int kernelSize = 3;  // 3 or 5
+    std::vector<float> kernel;
+    int presetIndex = 0;
+    GLuint previewTexId = 0;
+
+    ConvolutionFilterNode(int id, int inputPinId, int outputPinId) 
+        : Node(id, "Convolution Filter") {
+        Pin inPin(inputPinId, "Input", PinKind::Input);
+        inPin.node = this;
+        inputPins.push_back(inPin);
+
+        Pin outPin(outputPinId, "Output", PinKind::Output);
+        outPin.node = this;
+        outputPins.push_back(outPin);
+
+        // Initialize kernel with identity matrix
+        kernel.resize(MAX_KERNEL_SIZE * MAX_KERNEL_SIZE, 0.0f);
+        kernel[MAX_KERNEL_SIZE * MAX_KERNEL_SIZE / 2] = 1.0f;
+        
+        updatePreset(0); // Initialize with first preset
+    }
+
+    ~ConvolutionFilterNode() override {
+        if (previewTexId != 0) {
+            glDeleteTextures(1, &previewTexId);
+        }
+    }
+
+    void updatePreset(int index) {
+        kernel.assign(MAX_KERNEL_SIZE * MAX_KERNEL_SIZE, 0.0f);
+        
+        switch(index) {
+            case 0: // Identity
+                kernel[12] = 1.0f;
+                break;
+            case 1: // Sharpen
+                kernel[7] = -1.0f;
+                kernel[11] = -1.0f;
+                kernel[12] = 5.0f;
+                kernel[13] = -1.0f;
+                kernel[17] = -1.0f;
+                break;
+            case 2: // Emboss
+                kernel[6] = -2.0f;
+                kernel[7] = -1.0f;
+                kernel[11] = -1.0f;
+                kernel[12] = 1.0f;
+                kernel[13] = 1.0f;
+                kernel[17] = 1.0f;
+                kernel[18] = 2.0f;
+                break;
+            case 3: // Edge Enhance
+                kernel[7] = 1.0f;
+                kernel[11] = 1.0f;
+                kernel[12] = -4.0f;
+                kernel[13] = 1.0f;
+                kernel[17] = 1.0f;
+                break;
+        }
+        updateKernelPreview();
+    }
+
+    void updateKernelPreview() {
+        int previewSize = 100;
+        cv::Mat preview(previewSize, previewSize, CV_8UC4, cv::Scalar(0,0,0,255));
+        
+        float minVal = *std::min_element(kernel.begin(), kernel.end());
+        float maxVal = *std::max_element(kernel.begin(), kernel.end());
+        float range = maxVal - minVal;
+        
+        int cellSize = previewSize / kernelSize;
+        for(int i = 0; i < kernelSize; i++) {
+            for(int j = 0; j < kernelSize; j++) {
+                float value = kernel[i * MAX_KERNEL_SIZE + j];
+                uchar intensity = static_cast<uchar>((value - minVal) * 255 / range);
+                cv::rectangle(preview, 
+                    cv::Point(j * cellSize, i * cellSize),
+                    cv::Point((j + 1) * cellSize, (i + 1) * cellSize),
+                    cv::Scalar(intensity, intensity, intensity, 255),
+                    -1);
+            }
+        }
+        
+        // Update OpenGL texture
+        if (previewTexId == 0) {
+            glGenTextures(1, &previewTexId);
+        }
+        
+        glBindTexture(GL_TEXTURE_2D, previewTexId);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, preview.cols, preview.rows, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, preview.data);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    void process() override {
+        printf("Processing Convolution Filter node %d\n", id);
+
+        if (!outputPins.empty()) {
+            outputPins[0].imageData.release();
+        }
+
+        cv::Mat inputImage = GetInputImageData(inputPins[0]);
+        if (inputImage.empty()) {
+            printf("  No input image available.\n");
+            return;
+        }
+
+        // Create kernel matrix
+        cv::Mat kernelMat(kernelSize, kernelSize, CV_32F);
+        for(int i = 0; i < kernelSize; i++) {
+            for(int j = 0; j < kernelSize; j++) {
+                kernelMat.at<float>(i,j) = kernel[i * MAX_KERNEL_SIZE + j];
+            }
+        }
+
+        // Apply convolution
+        cv::Mat result;
+        cv::filter2D(inputImage, result, -1, kernelMat);
+        outputPins[0].imageData = result;
+
+        printf("  Convolution applied successfully.\n");
+    }
+};
