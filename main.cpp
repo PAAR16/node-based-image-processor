@@ -229,6 +229,17 @@ int main(int, char**)
                 int pin_out = g_Graph.nextPinId++;
                 QueueAddNode(new BlendNode(node_id, pin_in1, pin_in2, pin_out));
             }
+            if (ImGui::MenuItem("Noise Generator")) {
+                int node_id = g_Graph.nextNodeId++;
+                int pin_out = g_Graph.nextPinId++;
+                QueueAddNode(new NoiseGenerationNode(node_id, pin_out));
+            }
+            if (ImGui::MenuItem("Convolution Filter")) {
+                int node_id = g_Graph.nextNodeId++;
+                int pin_in = g_Graph.nextPinId++;
+                int pin_out = g_Graph.nextPinId++;
+                QueueAddNode(new ConvolutionFilterNode(node_id, pin_in, pin_out));
+            }
 
             ImGui::EndPopup();
         }
@@ -529,6 +540,55 @@ int main(int, char**)
 
                     if (changed) {
                         blendNode->process();
+                    }
+                }
+                else if (NoiseGenerationNode* noiseNode = dynamic_cast<NoiseGenerationNode*>(selected_node)) {
+                    ImGui::Text("Noise Generator Settings:");
+                    ImGui::Separator();
+
+                    bool changed = false;
+                    const char* noiseTypes[] = { "Perlin", "Simplex", "Worley" };
+                    changed |= ImGui::Combo("Type", &noiseNode->noiseType, noiseTypes, IM_ARRAYSIZE(noiseTypes));
+                    changed |= ImGui::SliderFloat("Scale", &noiseNode->scale, 1.0f, 100.0f);
+                    changed |= ImGui::SliderInt("Octaves", &noiseNode->octaves, 1, 8);
+                    changed |= ImGui::SliderFloat("Persistence", &noiseNode->persistence, 0.0f, 1.0f);
+                    changed |= ImGui::Checkbox("Use as Displacement", &noiseNode->useAsDisplacement);
+                    
+                    if (changed) {
+                        noiseNode->process();
+                    }
+                }
+                else if (ConvolutionFilterNode* convNode = dynamic_cast<ConvolutionFilterNode*>(selected_node)) {
+                    ImGui::Text("Convolution Filter Settings:");
+                    ImGui::Separator();
+
+                    bool changed = false;
+                    const char* presets[] = { "Identity", "Sharpen", "Emboss", "Edge Enhance" };
+                    if (ImGui::Combo("Preset", &convNode->presetIndex, presets, IM_ARRAYSIZE(presets))) {
+                        convNode->updatePreset(convNode->presetIndex);
+                        changed = true;
+                    }
+
+                    ImGui::Text("Kernel Values:");
+                    for (int i = 0; i < convNode->kernelSize; i++) {
+                        for (int j = 0; j < convNode->kernelSize; j++) {
+                            ImGui::PushID(i * convNode->MAX_KERNEL_SIZE + j);
+                            if (ImGui::DragFloat("##v", &convNode->kernel[i * convNode->MAX_KERNEL_SIZE + j], 0.1f, -5.0f, 5.0f)) {
+                                changed = true;
+                                convNode->updateKernelPreview();
+                            }
+                            ImGui::PopID();
+                            if (j < convNode->kernelSize-1) ImGui::SameLine();
+                        }
+                    }
+
+                    if (convNode->previewTexId != 0) {
+                        ImGui::Text("Kernel Preview:");
+                        ImGui::Image((void*)(intptr_t)convNode->previewTexId, ImVec2(100, 100));
+                    }
+
+                    if (changed) {
+                        convNode->process();
                     }
                 }
             }
