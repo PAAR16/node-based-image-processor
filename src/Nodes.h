@@ -420,12 +420,32 @@ struct BlurNode : public Node {
     void UpdateKernelPreview() {
         // Create kernel visualization
         int kernelSize = radius * 2 + 1;
-        cv::Mat kernel = cv::getGaussianKernel(kernelSize, -1);
-        cv::Mat kernel2D = kernel * kernel.t();
+        cv::Mat kernel;
+        
+        if (directionalBlur) {
+            // Create directional blur kernel
+            kernel = cv::Mat::zeros(kernelSize, kernelSize, CV_32F);
+            cv::Point2f center(kernelSize / 2.0f, kernelSize / 2.0f);
+            cv::Point2f dir(cos(angle * CV_PI / 180.0f), sin(angle * CV_PI / 180.0f));
+            
+            // Draw line on kernel
+            for (int i = -radius; i <= radius; i++) {
+                cv::Point2f pt = center + dir * float(i);
+                if (pt.x >= 0 && pt.x < kernelSize && pt.y >= 0 && pt.y < kernelSize) {
+                    kernel.at<float>(int(pt.y), int(pt.x)) = 1.0f;
+                }
+            }
+            // Normalize kernel
+            kernel = kernel / cv::sum(kernel)[0];
+        } else {
+            // Create Gaussian kernel
+            cv::Mat kernel1D = cv::getGaussianKernel(kernelSize, -1);
+            kernel = kernel1D * kernel1D.t();
+        }
         
         // Normalize kernel for visualization
         cv::Mat kernelVis;
-        cv::normalize(kernel2D, kernelVis, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(kernel, kernelVis, 0, 255, cv::NORM_MINMAX);
         kernelVis.convertTo(kernelVis, CV_8UC1);
         
         // Convert to RGBA for OpenGL texture

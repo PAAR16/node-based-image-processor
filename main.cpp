@@ -127,12 +127,12 @@ int main(int, char**)
         ImGui::NewFrame();
 
         // --- Draw the Node Editor ---
-        ImGui::SetNextWindowSize(ImVec2(900, 700), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(9000, 700), ImGuiCond_FirstUseEver); // Increased from 900 to 1200
         ImGui::Begin("Node Editor");
 
         // Split the window into two sections: node canvas and properties
         ImGui::Columns(2, "NodeEditorColumns", true);
-        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 300); // Main canvas gets all space except 300px
+        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 500); // Main canvas gets all space except 400px
 
         // Draw the node canvas in the left column
         ImNodes::BeginNodeEditor();
@@ -443,6 +443,17 @@ int main(int, char**)
                         changed = true;
                     }
 
+                    // Blur Type Selection
+                    changed |= ImGui::Checkbox("Directional Blur", &blurNode->directionalBlur);
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(?)");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("Uniform: Gaussian blur in all directions\nDirectional: Motion blur in specified angle");
+                        ImGui::EndTooltip();
+                    }
+
+                    // Radius control
                     if (ImGui::Button("Reset##Radius")) {
                         blurNode->radius = BlurNode::DEFAULT_RADIUS;
                         changed = true;
@@ -450,6 +461,7 @@ int main(int, char**)
                     ImGui::SameLine();
                     changed |= ImGui::SliderInt("Radius", &blurNode->radius, 1, 20);
 
+                    // Angle control (only show when directional blur is enabled)
                     if (blurNode->directionalBlur) {
                         if (ImGui::Button("Reset##Angle")) {
                             blurNode->angle = BlurNode::DEFAULT_ANGLE;
@@ -459,7 +471,17 @@ int main(int, char**)
                         changed |= ImGui::SliderAngle("Angle", &blurNode->angle, 0.0f, 360.0f);
                     }
 
-                    if (changed) blurNode->process();
+                    // Kernel preview toggle and display
+                    changed |= ImGui::Checkbox("Show Kernel", &blurNode->showKernel);
+                    if (blurNode->showKernel && blurNode->kernelPreviewTexId != 0) {
+                        ImGui::Text("Kernel Preview:");
+                        ImGui::Image((void*)(intptr_t)blurNode->kernelPreviewTexId, 
+                                    ImVec2(100, 100));
+                    }
+
+                    if (changed) {
+                        blurNode->process();
+                    }
                 }
                 else if (ThresholdNode* threshNode = dynamic_cast<ThresholdNode*>(selected_node)) {
                     ImGui::Text("Threshold Settings:");
