@@ -55,9 +55,10 @@ A C++ application providing a node-based interface for real-time image manipulat
    - Real-time preview
 
 9. **Noise Generation Node**
-   - Multiple noise types (Perlin, Simplex, Worley)
-   - Configurable parameters
-   - Optional displacement mapping
+   - Perlin noise generation
+   - Configurable parameters (scale, octaves, persistence)
+   - Color or displacement map output
+   - *(Note: Simplex and Worley noise types planned for future updates)*
 
 10. **Convolution Filter Node**
     - Custom 3x3 kernel editor
