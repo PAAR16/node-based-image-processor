@@ -559,8 +559,19 @@ int main(int, char**)
                     ImGui::Separator();
 
                     bool changed = false;
-                    const char* noiseTypes[] = { "Perlin", "Simplex", "Worley" };
+                    
+                    // Modified: Only show implemented noise type
+                    const char* noiseTypes[] = { "Perlin" };  // Removed unimplemented types
                     changed |= ImGui::Combo("Type", &noiseNode->noiseType, noiseTypes, IM_ARRAYSIZE(noiseTypes));
+                    
+                    // Add a note about other noise types
+                    ImGui::TextDisabled("(?)");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("Additional noise types (Simplex, Worley)\nwill be implemented in future updates");
+                        ImGui::EndTooltip();
+                    }
+
                     changed |= ImGui::SliderFloat("Scale", &noiseNode->scale, 1.0f, 100.0f);
                     changed |= ImGui::SliderInt("Octaves", &noiseNode->octaves, 1, 8);
                     changed |= ImGui::SliderFloat("Persistence", &noiseNode->persistence, 0.0f, 1.0f);

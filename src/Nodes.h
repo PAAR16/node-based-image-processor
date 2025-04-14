@@ -857,13 +857,11 @@ struct BlendNode : public Node {
 
 // --- Noise Generation Node ---
 struct NoiseGenerationNode : public Node {
-    int noiseType = 0;      // 0=Perlin, 1=Simplex, 2=Worley
-    float scale = 50.0f;    // Noise scale
-    int octaves = 4;        // Number of octaves (1-8)
-    float persistence = 0.5f;// How much each octave contributes
-    int width = 512;        // Output image width
-    int height = 512;       // Output image height
-    bool useAsDisplacement = false; // Displacement map or direct output
+    int noiseType = 0;  // 0 = Perlin (only implemented type)
+    float scale = 50.0f;
+    int octaves = 4;
+    float persistence = 0.5f;
+    bool useAsDisplacement = false;
     
     NoiseGenerationNode(int id, int outputPinId) : Node(id, "Noise Generator") {
         Pin outPin(outputPinId, "Output", PinKind::Output);
@@ -890,12 +888,12 @@ struct NoiseGenerationNode : public Node {
     void process() override {
         printf("Processing Noise Generation node %d\n", id);
         
-        cv::Mat noiseImage(height, width, CV_8UC3);
+        cv::Mat noiseImage(512, 512, CV_8UC3);
         
-        for(int y = 0; y < height; y++) {
-            for(int x = 0; x < width; x++) {
-                float nx = x * scale / width;
-                float ny = y * scale / height;
+        for(int y = 0; y < 512; y++) {
+            for(int x = 0; x < 512; x++) {
+                float nx = x * scale / 512;
+                float ny = y * scale / 512;
                 float value = 0.0f;
                 float amplitude = 1.0f;
                 float frequency = 1.0f;
