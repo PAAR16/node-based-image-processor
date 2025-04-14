@@ -6,6 +6,9 @@
 #include <imgui.h>
 #include <opencv2/opencv.hpp>
 #include <optional>
+#include <set>
+#include <algorithm>
+#include <unordered_map> // NEW: Added for unordered_map
 
 // Forward Declarations (to avoid circular includes)
 struct Node;
@@ -51,12 +54,42 @@ struct Node {
     std::vector<Pin> inputPins;
     std::vector<Pin> outputPins;
     ImVec2 graphPosition; // Store node position on the canvas (needed for saving/loading)
+    bool isDirty = true; // NEW: Flag to indicate if the node needs processing
 
     // We need a way to process the node's function
     // Virtual function to be overridden by derived node types
     virtual void process() {
         // Base implementation does nothing
         printf("Processing node: %s (ID: %d) - Base Implementation\n", name.c_str(), id);
+    }
+
+    bool needsProcessing() const {
+        if (isDirty) return true;
+        
+        // Check if any input has changed
+        for (const Pin& pin : inputPins) {
+            if (pin.imageData.empty()) return true;
+            
+            // Compare with cached input state
+            auto it = lastInputState.find(pin.id);
+            if (it == lastInputState.end()) return true;
+            
+            const cv::Mat& cached = it->second; // Make it const
+            // Use matrix comparison instead of equals
+            if (!cached.data || !cv::countNonZero(pin.imageData == cached)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void updateInputCache() {
+        lastInputState.clear();
+        for (const Pin& pin : inputPins) {
+            if (!pin.imageData.empty()) {
+                lastInputState[pin.id] = pin.imageData.clone();
+            }
+        }
     }
 
     // Virtual destructor is important for base classes with virtual functions
@@ -76,33 +109,144 @@ protected:
             outputPins.push_back(newPin);
         }
     }
+
+    std::unordered_map<int, cv::Mat> lastInputState; // NEW: Cache for input state
 };
 
 
 // --- Graph Structure ---
 // Holds all the nodes and links
-struct NodeGraph {
+class NodeGraph {
+public:
     std::vector<Node*> nodes;
     std::vector<Link> links;
-    int nextNodeId = 1; // Counter to generate unique IDs
-    int nextPinId = 100; // Start pin IDs higher to avoid collision with node IDs
-    int nextLinkId = 1000; // Start link IDs even higher
+    int nextNodeId = 1;
+    int nextPinId = 1;
+    int nextLinkId = 1; // Add missing link ID counter
 
-    // NEW: Graph Execution
-    void ExecuteGraph() {
-        printf("\n--- Executing Graph ---\n");
+    std::vector<Node*> getExecutionOrder() {
+        std::vector<Node*> executionOrder;
+        std::set<Node*> visited;
+        std::set<Node*> processing;
+
+        // Find output nodes (nodes with no output connections)
         for (Node* node : nodes) {
-            node->process();
+            bool hasOutputConnection = false;
+            for (const Link& link : links) {
+                for (const Pin& pin : node->outputPins) {
+                    if (link.startPinId == pin.id) {
+                        hasOutputConnection = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasOutputConnection) {
+                topologicalSort(node, visited, processing, executionOrder);
+            }
         }
-        printf("--- Graph Execution Finished ---\n");
+
+        std::reverse(executionOrder.begin(), executionOrder.end());
+        return executionOrder;
     }
 
-    // Destructor to clean up nodes
-    ~NodeGraph() {
-        for (Node* node : nodes) {
-            delete node; // Delete nodes allocated with 'new'
+    void executeGraph() {
+        if (hasCircularDependency()) {
+            fprintf(stderr, "Error: Circular dependency detected in node graph\n");
+            return;
         }
-        nodes.clear();
+
+        std::vector<Node*> executionOrder = getExecutionOrder();
+        for (Node* node : executionOrder) {
+            if (node->needsProcessing()) {
+                printf("Processing node: %s (ID: %d)\n", node->name.c_str(), node->id);
+                node->process();
+                node->updateInputCache();
+            } else {
+                printf("Using cached result for node: %s (ID: %d)\n", node->name.c_str(), node->id);
+            }
+        }
+    }
+
+private:
+    void topologicalSort(Node* node, std::set<Node*>& visited, 
+                        std::set<Node*>& processing,
+                        std::vector<Node*>& order) {
+        if (processing.find(node) != processing.end()) {
+            // Circular dependency found
+            return;
+        }
+
+        if (visited.find(node) != visited.end()) {
+            return;
+        }
+
+        processing.insert(node);
+
+        // Process input dependencies first
+        for (const Pin& pin : node->inputPins) {
+            for (const Link& link : links) {
+                if (link.endPinId == pin.id) {
+                    Node* sourceNode = FindNodeByPinId(link.startPinId);
+                    if (sourceNode) {
+                        topologicalSort(sourceNode, visited, processing, order);
+                    }
+                }
+            }
+        }
+
+        processing.erase(node);
+        visited.insert(node);
+        order.push_back(node);
+    }
+
+    Node* FindNodeByPinId(int pinId) {
+        for (Node* node : nodes) {
+            for (const Pin& pin : node->outputPins) {
+                if (pin.id == pinId) {
+                    return node;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    bool hasCircularDependency() {
+        std::set<Node*> visited;
+        std::set<Node*> processing;
+
+        for (Node* node : nodes) {
+            if (detectCycle(node, visited, processing)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool detectCycle(Node* node, std::set<Node*>& visited, std::set<Node*>& processing) {
+        if (processing.find(node) != processing.end()) {
+            return true;
+        }
+
+        if (visited.find(node) != visited.end()) {
+            return false;
+        }
+
+        processing.insert(node);
+
+        for (const Pin& pin : node->inputPins) {
+            for (const Link& link : links) {
+                if (link.endPinId == pin.id) {
+                    Node* sourceNode = FindNodeByPinId(link.startPinId);
+                    if (sourceNode && detectCycle(sourceNode, visited, processing)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        processing.erase(node);
+        visited.insert(node);
+        return false;
     }
 };
 

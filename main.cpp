@@ -257,7 +257,7 @@ int main(int, char**)
 
         // NEW: Add Process Button at the top of properties panel
         if (ImGui::Button("Process Graph")) {
-            g_Graph.ExecuteGraph(); // Call the graph execution function
+            g_Graph.executeGraph(); // Correct case for method name
         }
         ImGui::Separator();
 
