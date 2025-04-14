@@ -92,26 +92,20 @@ int main(int, char**)
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
-    // --- 2. Initialize ImGui & ImNodes ---
+    // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    printf("ImGui Context Created.\n");
     ImNodes::CreateContext();
-    printf("ImNodes Context Created.\n");
-
     ImGuiIO& io = ImGui::GetIO(); (void)io;
 
+    // Setup style
     ImGui::StyleColorsDark();
     ImNodes::StyleColorsDark();
-    printf("ImGui/ImNodes Style Set.\n");
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) { /* ... error handling ... */ std::cerr << "ImGui GLFW Backend Failed\n"; ImNodes::DestroyContext(); ImGui::DestroyContext(); glfwDestroyWindow(window); glfwTerminate(); return 1; }
     printf("ImGui GLFW Backend Initialized.\n");
     if (!ImGui_ImplOpenGL3_Init(glsl_version)) { /* ... error handling ... */ std::cerr << "ImGui OpenGL3 Backend Failed\n"; ImGui_ImplGlfw_Shutdown(); ImNodes::DestroyContext(); ImGui::DestroyContext(); glfwDestroyWindow(window); glfwTerminate(); return 1; }
     printf("ImGui OpenGL3 Backend Initialized.\n");
-
-
-    ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.00f);
 
     printf("Entering main loop...\n");
     // --- 3. Main Render Loop ---
@@ -126,15 +120,16 @@ int main(int, char**)
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // --- Draw the Node Editor ---
-        ImGui::SetNextWindowSize(ImVec2(9000, 700), ImGuiCond_FirstUseEver); // Increased from 900 to 1200
-        ImGui::Begin("Node Editor");
+        // Create main window with fixed layout
+        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(1280, 720), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Node Editor", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar);
 
-        // Split the window into two sections: node canvas and properties
-        ImGui::Columns(2, "NodeEditorColumns", true);
-        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 500); // Main canvas gets all space except 400px
+        // Split window into two columns
+        ImGui::Columns(2, "MainColumns", true);
+        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 300); // Node canvas gets all space except 300px
 
-        // Draw the node canvas in the left column
+        // Node Canvas (Left Column)
         ImNodes::BeginNodeEditor();
 
         // Draw Existing Nodes
@@ -745,7 +740,7 @@ int main(int, char**)
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
-        glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
+        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
