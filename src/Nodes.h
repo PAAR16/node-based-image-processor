@@ -26,6 +26,7 @@ struct ImageInputNode : public Node {
     int imgWidth = 0;
     int imgHeight = 0;
     std::string imgFormat = ""; // Store format (from extension)
+    size_t fileSize = 0;  // Add file size member
 
     ImageInputNode(int id, int pinId) : Node(id, "Image Input") {
         Pin outPin(pinId, "Output", PinKind::Output);
@@ -40,9 +41,19 @@ struct ImageInputNode : public Node {
         imgWidth = 0;
         imgHeight = 0;
         imgFormat = "";
+        fileSize = 0;  // Reset file size
 
         if (!filePath.empty()) {
             printf("  Attempting to load image: %s\n", filePath.c_str());
+
+            // Get file size
+            FILE* fp = fopen(filePath.c_str(), "rb");
+            if (fp) {
+                fseek(fp, 0, SEEK_END);
+                fileSize = ftell(fp);
+                fclose(fp);
+            }
+
             loadedImage = cv::imread(filePath); // Load the image
             if (loadedImage.empty()) {
                 fprintf(stderr, "  Error: Could not load image from %s\n", filePath.c_str());
@@ -60,7 +71,8 @@ struct ImageInputNode : public Node {
                     // Convert to uppercase for display consistency
                      std::transform(imgFormat.begin(), imgFormat.end(), imgFormat.begin(), ::toupper);
                 }
-                printf("  Loaded image: %s (%dx%d) Format: %s\n", filePath.c_str(), imgWidth, imgHeight, imgFormat.c_str());
+                printf("  Loaded image: %s (%dx%d) Format: %s Size: %.2f MB\n", 
+                    filePath.c_str(), imgWidth, imgHeight, imgFormat.c_str(), fileSize / (1024.0 * 1024.0));
                  // Store loaded image in the output pin
                  if (!outputPins.empty()) {
                      outputPins[0].imageData = loadedImage; // Store the result
@@ -212,7 +224,7 @@ struct OutputNode : public Node {
                 printf("  Output node received image data (%dx%d) from pin %d.\n", inputData.value().cols, inputData.value().rows, inputPins[0].id);
                 resultImage = inputData.value().clone();
             } else {
-                printf("  Output node did not receive image data from pin %d.\n", inputPins[0].id);
+                printf("  Output node did not receive image data from pin %d.\n");
                  if (!previousResult.empty()) { // If we had data before but now don't
                      dataChanged = true;
                  }
@@ -234,12 +246,11 @@ struct OutputNode : public Node {
 
 // --- Brightness/Contrast Node ---
 struct BrightnessContrastNode : public Node {
-    float brightness = 0.0f; // Range: -100 to 100 (maps to beta in convertTo)
-    float contrast = 1.0f;   // Range: 0 to 3 (maps to alpha in convertTo)
-    
-    // Add default values as constants
-    const float DEFAULT_BRIGHTNESS = 0.0f;
-    const float DEFAULT_CONTRAST = 1.0f;
+    // Default values as static constants
+    static constexpr float DEFAULT_BRIGHTNESS = 0.0f;
+    static constexpr float DEFAULT_CONTRAST = 1.0f;
+    float brightness = DEFAULT_BRIGHTNESS;
+    float contrast = DEFAULT_CONTRAST;
 
     BrightnessContrastNode(int id, int inputPinId, int outputPinId) : Node(id, "Brightness/Contrast") {
         Pin inPin(inputPinId, "Image In", PinKind::Input);
@@ -251,11 +262,9 @@ struct BrightnessContrastNode : public Node {
         outputPins.push_back(outPin);
     }
 
-    // Add reset method
     void reset() {
         brightness = DEFAULT_BRIGHTNESS;
         contrast = DEFAULT_CONTRAST;
-        // Trigger reprocessing after reset
         process();
     }
 
@@ -375,9 +384,11 @@ struct ColorChannelSplitterNode : public Node {
 
 // --- Blur Node ---
 struct BlurNode : public Node {
-    int radius = 3;           // Blur radius (1-20px)
+    static constexpr int DEFAULT_RADIUS = 3;
+    static constexpr float DEFAULT_ANGLE = 0.0f;
+    int radius = DEFAULT_RADIUS;
     bool directionalBlur = false;
-    float angle = 0.0f;       // Angle for directional blur (0-360 degrees)
+    float angle = DEFAULT_ANGLE;
     bool showKernel = true;   // Toggle kernel preview
     GLuint kernelPreviewTexId = 0;
 
@@ -397,6 +408,13 @@ struct BlurNode : public Node {
         if (kernelPreviewTexId != 0) {
             glDeleteTextures(1, &kernelPreviewTexId);
         }
+    }
+
+    void reset() {
+        radius = DEFAULT_RADIUS;
+        directionalBlur = false;
+        angle = DEFAULT_ANGLE;
+        process();
     }
 
     void UpdateKernelPreview() {
@@ -484,10 +502,14 @@ struct BlurNode : public Node {
 
 // --- Threshold Node ---
 struct ThresholdNode : public Node {
-    int thresholdValue = 127;  // Default threshold value (0-255)
+    static constexpr int DEFAULT_THRESHOLD = 127;
+    static constexpr int DEFAULT_BLOCK_SIZE = 11;
+    static constexpr float DEFAULT_C = 2.0f;
+    
+    int thresholdValue = DEFAULT_THRESHOLD;
     int thresholdMethod = 0;   // 0=Binary, 1=Adaptive, 2=Otsu
-    int blockSize = 11;        // For adaptive threshold (must be odd)
-    float C = 2.0f;            // Changed from double to float
+    int blockSize = DEFAULT_BLOCK_SIZE;
+    float C = DEFAULT_C;
     GLuint histogramTexId = 0; // For histogram visualization
     std::vector<int> histogram;// Store histogram data
 
@@ -507,6 +529,13 @@ struct ThresholdNode : public Node {
         if (histogramTexId != 0) {
             glDeleteTextures(1, &histogramTexId);
         }
+    }
+
+    void reset() {
+        thresholdValue = DEFAULT_THRESHOLD;
+        blockSize = DEFAULT_BLOCK_SIZE;
+        C = DEFAULT_C;
+        process();
     }
 
     void UpdateHistogram(const cv::Mat& image) {

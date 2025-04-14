@@ -289,64 +289,58 @@ int main(int, char**)
 
                 // Node-specific properties
                 if (BrightnessContrastNode* bcNode = dynamic_cast<BrightnessContrastNode*>(selected_node)) {
-                    ImGui::Text("Parameters:");
-                    ImGui::Text("  Brightness: %.2f", bcNode->brightness);
-                    ImGui::Text("  Contrast: %.2f", bcNode->contrast);
+                    ImGui::Text("Brightness/Contrast Settings:");
                     ImGui::Separator();
                     
                     bool changed = false;
-                    if (ImGui::Button("Reset All##BrightnessContrast")) {
+
+                    // Reset All button
+                    if (ImGui::Button("Reset All##BC")) {
                         bcNode->reset();
+                        changed = true;
                     }
-                    
-                    // Brightness control with reset
+
+                    // Individual parameter resets
                     if (ImGui::Button("Reset##Brightness")) {
-                        bcNode->brightness = bcNode->DEFAULT_BRIGHTNESS;
+                        bcNode->brightness = BrightnessContrastNode::DEFAULT_BRIGHTNESS;
                         changed = true;
                     }
                     ImGui::SameLine();
                     changed |= ImGui::SliderFloat("Brightness", &bcNode->brightness, -100.0f, 100.0f);
-                    
-                    // Contrast control with reset
+
                     if (ImGui::Button("Reset##Contrast")) {
-                        bcNode->contrast = bcNode->DEFAULT_CONTRAST;
+                        bcNode->contrast = BrightnessContrastNode::DEFAULT_CONTRAST;
                         changed = true;
                     }
                     ImGui::SameLine();
                     changed |= ImGui::SliderFloat("Contrast", &bcNode->contrast, 0.0f, 3.0f);
-                    
-                    if (changed) {
-                        printf("Node %d parameters updated (B:%.2f, C:%.2f)\n", bcNode->id, bcNode->brightness, bcNode->contrast);
-                        bcNode->process();
-                    }
+
+                    if (changed) bcNode->process();
                 }
                 else if (ImageInputNode* inputNode = dynamic_cast<ImageInputNode*>(selected_node)) {
-                    ImGui::Text("Parameters:");
-                    ImGui::TextWrapped("File Path: %s", inputNode->filePath.empty() ? "<None>" : inputNode->filePath.c_str());
-
-                    if (ImGui::Button("Browse...")) {
-                        auto selection = pfd::open_file("Select an Image",
-                            ".",
-                            { "Image Files", "*.jpg *.jpeg *.png *.bmp",
-                              "All Files", "*" },
-                            pfd::opt::none).result();
-
-                        if (!selection.empty()) {
-                            inputNode->filePath = selection[0];
-                            printf("Selected file: %s\n", inputNode->filePath.c_str());
-                            inputNode->process();
-                        } else {
-                            printf("File selection cancelled.\n");
-                        }
-                    }
+                    ImGui::Text("Image Input Settings:");
                     ImGui::Separator();
 
-                    ImGui::Text("Metadata:");
-                    if (inputNode->imgWidth > 0) {
-                        ImGui::Text("  Dimensions: %d x %d", inputNode->imgWidth, inputNode->imgHeight);
-                        ImGui::Text("  Format: %s", inputNode->imgFormat.c_str());
-                    } else {
-                        ImGui::Text("  <No image loaded>");
+                    // File path display/load button
+                    ImGui::Text("File: %s", inputNode->filePath.empty() ? "No file selected" : inputNode->filePath.c_str());
+                    if (ImGui::Button("Load Image")) {
+                        auto selection = pfd::open_file("Choose image file", ".",
+                            { "Image files", "*.png *.jpg *.jpeg *.bmp" });
+                        if (!selection.result().empty()) {
+                            inputNode->filePath = selection.result()[0];
+                            inputNode->process();
+                        }
+                    }
+
+                    // Display metadata
+                    if (!inputNode->loadedImage.empty()) {
+                        ImGui::Separator();
+                        ImGui::Text("Metadata:");
+                        ImGui::BulletText("Dimensions: %dx%d", inputNode->imgWidth, inputNode->imgHeight);
+                        ImGui::BulletText("Format: %s", inputNode->imgFormat.c_str());
+                        ImGui::BulletText("File Size: %.2f MB", inputNode->fileSize / (1024.0 * 1024.0));
+                        ImGui::BulletText("Channels: %d", inputNode->loadedImage.channels());
+                        ImGui::BulletText("Depth: %d-bit", inputNode->loadedImage.elemSize1() * 8);
                     }
                 }
                 else if (OutputNode* outputNode = dynamic_cast<OutputNode*>(selected_node)) {
@@ -444,27 +438,28 @@ int main(int, char**)
 
                     bool changed = false;
                     
-                    // Radius control
-                    changed |= ImGui::SliderInt("Radius", &blurNode->radius, 1, 20);
-                    
-                    // Blur type and direction
-                    changed |= ImGui::Checkbox("Directional Blur", &blurNode->directionalBlur);
-                    if (blurNode->directionalBlur) {
-                        changed |= ImGui::SliderAngle("Angle", &blurNode->angle, 0.0f, 360.0f);
-                    }
-                    
-                    // Kernel preview
-                    ImGui::Checkbox("Show Kernel", &blurNode->showKernel);
-                    if (blurNode->showKernel && blurNode->kernelPreviewTexId != 0) {
-                        ImGui::Text("Kernel Preview:");
-                        float kernelSize = (float)(blurNode->radius * 2 + 1);
-                        ImGui::Image((void*)(intptr_t)blurNode->kernelPreviewTexId, 
-                                    ImVec2(100, 100));
+                    if (ImGui::Button("Reset All##Blur")) {
+                        blurNode->reset();
+                        changed = true;
                     }
 
-                    if (changed) {
-                        blurNode->process();
+                    if (ImGui::Button("Reset##Radius")) {
+                        blurNode->radius = BlurNode::DEFAULT_RADIUS;
+                        changed = true;
                     }
+                    ImGui::SameLine();
+                    changed |= ImGui::SliderInt("Radius", &blurNode->radius, 1, 20);
+
+                    if (blurNode->directionalBlur) {
+                        if (ImGui::Button("Reset##Angle")) {
+                            blurNode->angle = BlurNode::DEFAULT_ANGLE;
+                            changed = true;
+                        }
+                        ImGui::SameLine();
+                        changed |= ImGui::SliderAngle("Angle", &blurNode->angle, 0.0f, 360.0f);
+                    }
+
+                    if (changed) blurNode->process();
                 }
                 else if (ThresholdNode* threshNode = dynamic_cast<ThresholdNode*>(selected_node)) {
                     ImGui::Text("Threshold Settings:");
