@@ -167,6 +167,19 @@ public:
         }
     }
 
+    // Make hasCircularDependency public
+    bool hasCircularDependency() {
+        std::set<Node*> visited;
+        std::set<Node*> processing;
+        
+        for (Node* node : nodes) {
+            if (detectCycle(node, visited, processing)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 private:
     void topologicalSort(Node* node, std::set<Node*>& visited, 
                         std::set<Node*>& processing,
@@ -210,40 +223,33 @@ private:
         return nullptr;
     }
 
-    bool hasCircularDependency() {
-        std::set<Node*> visited;
-        std::set<Node*> processing;
-
-        for (Node* node : nodes) {
-            if (detectCycle(node, visited, processing)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     bool detectCycle(Node* node, std::set<Node*>& visited, std::set<Node*>& processing) {
         if (processing.find(node) != processing.end()) {
             return true;
         }
-
+        
         if (visited.find(node) != visited.end()) {
             return false;
         }
-
+        
         processing.insert(node);
-
-        for (const Pin& pin : node->inputPins) {
+        
+        for (const Pin& outputPin : node->outputPins) {
             for (const Link& link : links) {
-                if (link.endPinId == pin.id) {
-                    Node* sourceNode = FindNodeByPinId(link.startPinId);
-                    if (sourceNode && detectCycle(sourceNode, visited, processing)) {
-                        return true;
+                if (link.startPinId == outputPin.id) {
+                    for (Node* otherNode : nodes) {
+                        for (const Pin& inputPin : otherNode->inputPins) {
+                            if (inputPin.id == link.endPinId) {
+                                if (detectCycle(otherNode, visited, processing)) {
+                                    return true;
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-
+        
         processing.erase(node);
         visited.insert(node);
         return false;

@@ -678,7 +678,18 @@ int main(int, char**)
                 linkIsValid = false;
             }
 
-            // 5. TODO: Add Data Type Compatibility Check here later if needed
+            // 5. Check for circular dependencies
+            if (linkIsValid) {
+                // Temporarily add the link to check for cycles
+                g_Graph.links.push_back(Link(g_Graph.nextLinkId, start_pin_id, end_pin_id));
+                if (g_Graph.hasCircularDependency()) {
+                    fprintf(stderr, "  Error: Cannot create link - would create circular dependency.\n");
+                    g_Graph.links.pop_back();  // Remove temporary link
+                    linkIsValid = false;
+                } else {
+                    g_Graph.links.pop_back();  // Remove temporary link to add it properly later
+                }
+            }
 
             // 6. Add the link if all checks passed
             if (linkIsValid) {
