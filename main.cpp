@@ -127,7 +127,7 @@ int main(int, char**)
 
         // Split window into two columns
         ImGui::Columns(2, "MainColumns", true);
-        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 300); // Node canvas gets all space except 300px
+        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 450); // Changed from 300 to 400
 
         // Node Canvas (Left Column)
         ImNodes::BeginNodeEditor();
